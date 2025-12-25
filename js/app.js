@@ -32,6 +32,11 @@ const utils = {
         return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     },
     
+    // 現在の日時をタイムスタンプ形式で取得 (ISO 8601)
+    getCurrentTimestamp() {
+        return new Date().toISOString();
+    },
+    
     // 日付フォーマット (YYYY-MM-DD → YYYY年MM月DD日)
     formatDate(dateStr) {
         const date = new Date(dateStr + 'T00:00:00');
@@ -41,6 +46,19 @@ const utils = {
         const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
         const weekday = weekdays[date.getDay()];
         return `${year}年${month}月${day}日(${weekday})`;
+    },
+    
+    // タイムスタンプから時刻を抽出 (ISO 8601 → HH:MM)
+    formatTime(timestamp) {
+        if (!timestamp) return '-';
+        const date = new Date(timestamp);
+        return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    },
+    
+    // 日付と時刻からタイムスタンプを作成 (YYYY-MM-DD + HH:MM → ISO 8601)
+    createTimestamp(dateStr, timeStr) {
+        if (!timeStr || timeStr === '-') return null;
+        return `${dateStr}T${timeStr}:00`;
     },
     
     // 勤務時間計算（休憩時間を自動控除）
@@ -300,7 +318,7 @@ function updateClock() {
 const clock = {
     async clockIn() {
         const shiftType = document.querySelector('input[name="shiftType"]:checked').value;
-        const clockInTime = utils.getCurrentTime();
+        const clockInTime = utils.getCurrentTimestamp(); // タイムスタンプ形式に変更
         const date = utils.getCurrentDate();
         
         try {
@@ -336,15 +354,27 @@ const clock = {
     },
     
     async clockOut() {
-        const clockOutTime = utils.getCurrentTime();
-        const { workHours, breakMinutes } = utils.calculateWorkHours(
-            app.todayAttendance.clock_in,
-            clockOutTime
-        );
+        const clockOutTime = utils.getCurrentTimestamp(); // タイムスタンプ形式に変更
+        
+        // clock_inとclock_outから時刻部分を抽出して勤務時間を計算
+        const clockInDate = new Date(app.todayAttendance.clock_in);
+        const clockOutDate = new Date(clockOutTime);
+        const diffMinutes = (clockOutDate - clockInDate) / 1000 / 60;
+        const diffHours = diffMinutes / 60;
+        
+        // 休憩時間を自動控除（6時間以上勤務で45分、8時間以上で60分）
+        let breakMinutes = 0;
+        if (diffHours >= 8) {
+            breakMinutes = 60;
+        } else if (diffHours >= 6) {
+            breakMinutes = 45;
+        }
+        
+        const actualWorkMinutes = diffMinutes - breakMinutes;
+        const workHours = Math.round((actualWorkMinutes / 60) * 10) / 10;
         
         try {
             const updatedData = {
-                ...app.todayAttendance,
                 clock_out: clockOutTime,
                 break_minutes: breakMinutes,
                 work_hours: workHours
@@ -371,6 +401,7 @@ const clock = {
             this.updateButtons();
             utils.showToast('退勤を記録しました', 'success');
         } catch (error) {
+            console.error('退勤エラー:', error);
             utils.showToast('退勤の記録に失敗しました', 'error');
         }
     },
@@ -393,7 +424,7 @@ const clock = {
                 </div>
                 <div>
                     <div class="text-sm text-gray-600">出勤時刻</div>
-                    <div class="text-lg font-bold text-tsunagu-green">${clock_in}</div>
+                    <div class="text-lg font-bold text-tsunagu-green">${utils.formatTime(clock_in)}</div>
                 </div>
         `;
         
@@ -401,7 +432,7 @@ const clock = {
             html += `
                 <div>
                     <div class="text-sm text-gray-600">退勤時刻</div>
-                    <div class="text-lg font-bold text-tsunagu-red">${clock_out}</div>
+                    <div class="text-lg font-bold text-tsunagu-red">${utils.formatTime(clock_out)}</div>
                 </div>
                 <div>
                     <div class="text-sm text-gray-600">勤務時間</div>
@@ -511,8 +542,8 @@ const attendance = {
                         ${att.shift_type}
                     </span>
                 </td>
-                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-green-600 font-medium">${att.clock_in}</td>
-                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-red-600 font-medium">${att.clock_out || '-'}</td>
+                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-green-600 font-medium">${utils.formatTime(att.clock_in)}</td>
+                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-red-600 font-medium">${utils.formatTime(att.clock_out)}</td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm">${att.break_minutes}分</td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-bold">${att.work_hours}時間</td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium text-red-600">${compensatoryInfo}</td>
@@ -526,50 +557,6 @@ const attendance = {
         `}).join('');
         
         tbody.innerHTML = html;
-        this.updateHolidaySummary();
-    },
-    
-    updateHolidaySummary() {
-        const summaryContent = document.getElementById('holidaySummaryContent');
-        
-        // 従業員ごとの振替休暇集計
-        const employeeSummary = {};
-        
-        app.compensatoryLeaves.forEach(leave => {
-            if (!leave.used) {
-                if (!employeeSummary[leave.employee_id]) {
-                    employeeSummary[leave.employee_id] = {
-                        name: app.allEmployees.find(e => e.id === leave.employee_id)?.name || '不明',
-                        days: 0,
-                        hours: 0,
-                        items: []
-                    };
-                }
-                employeeSummary[leave.employee_id].days += leave.substitute_days;
-                employeeSummary[leave.employee_id].hours += leave.substitute_hours;
-                employeeSummary[leave.employee_id].items.push(leave);
-            }
-        });
-        
-        if (Object.keys(employeeSummary).length === 0) {
-            summaryContent.innerHTML = '<p class="text-gray-600 text-sm md:text-base">振替休暇の蓄積はありません</p>';
-            return;
-        }
-        
-        const html = Object.values(employeeSummary).map(summary => `
-            <div class="bg-white rounded-lg p-3 md:p-4 shadow">
-                <div class="font-bold text-gray-800 mb-2 text-sm md:text-base">${summary.name}</div>
-                <div class="text-xl md:text-2xl font-bold text-red-600 mb-2">
-                    ${summary.days > 0 ? `${summary.days}日` : ''}${summary.days > 0 && summary.hours > 0 ? ' + ' : ''}${summary.hours > 0 ? `${summary.hours}時間` : ''}
-                </div>
-                <button onclick="compensatory.showUseModal('${summary.items[0].employee_id}')" 
-                        class="text-xs md:text-sm bg-tsunagu-blue text-white px-2 md:px-3 py-1 rounded hover:bg-blue-700 transition w-full sm:w-auto">
-                    <i class="fas fa-calendar-check mr-1"></i>振替使用
-                </button>
-            </div>
-        `).join('');
-        
-        summaryContent.innerHTML = html;
     },
     
     filterByMonth() {
@@ -596,8 +583,8 @@ const attendance = {
         document.getElementById('editDate').value = att.date;
         document.getElementById('editEmployeeName').value = employeeName;
         document.getElementById('editShiftType').value = att.shift_type;
-        document.getElementById('editClockIn').value = att.clock_in;
-        document.getElementById('editClockOut').value = att.clock_out || '';
+        document.getElementById('editClockIn').value = utils.formatTime(att.clock_in);
+        document.getElementById('editClockOut').value = utils.formatTime(att.clock_out);
         document.getElementById('editNote').value = att.note || '';
         
         document.getElementById('attendanceModal').classList.remove('hidden');
@@ -607,31 +594,51 @@ const attendance = {
         event.preventDefault();
         
         const id = document.getElementById('editAttendanceId').value;
-        const clockIn = document.getElementById('editClockIn').value;
-        const clockOut = document.getElementById('editClockOut').value;
+        const date = document.getElementById('editDate').value;
+        const clockInTime = document.getElementById('editClockIn').value;
+        const clockOutTime = document.getElementById('editClockOut').value;
         
-        const { workHours, breakMinutes } = utils.calculateWorkHours(clockIn, clockOut);
+        // HH:MM形式をタイムスタンプに変換
+        const clockInTimestamp = utils.createTimestamp(date, clockInTime);
+        const clockOutTimestamp = utils.createTimestamp(date, clockOutTime);
+        
+        // タイムスタンプから勤務時間を計算
+        let workHours = 0;
+        let breakMinutes = 0;
+        
+        if (clockInTimestamp && clockOutTimestamp) {
+            const clockInDate = new Date(clockInTimestamp);
+            const clockOutDate = new Date(clockOutTimestamp);
+            const diffMinutes = (clockOutDate - clockInDate) / 1000 / 60;
+            const diffHours = diffMinutes / 60;
+            
+            // 休憩時間を自動控除
+            if (diffHours >= 8) {
+                breakMinutes = 60;
+            } else if (diffHours >= 6) {
+                breakMinutes = 45;
+            }
+            
+            const actualWorkMinutes = diffMinutes - breakMinutes;
+            workHours = Math.round((actualWorkMinutes / 60) * 10) / 10;
+        }
         
         const data = {
-            date: document.getElementById('editDate').value,
             shift_type: document.getElementById('editShiftType').value,
-            clock_in: clockIn,
-            clock_out: clockOut,
+            clock_in: clockInTimestamp,
+            clock_out: clockOutTimestamp,
             break_minutes: breakMinutes,
             work_hours: workHours,
             note: document.getElementById('editNote').value
         };
         
-        // 既存のデータを取得して保持
-        const existingAtt = app.allAttendance.find(a => a.id === id);
-        const fullData = { ...existingAtt, ...data };
-        
         try {
-            await api.updateAttendance(id, fullData);
+            await api.updateAttendance(id, data);
             utils.showToast('勤怠情報を更新しました', 'success');
             document.getElementById('attendanceModal').classList.add('hidden');
             await this.loadAttendance();
         } catch (error) {
+            console.error('勤怠更新エラー:', error);
             utils.showToast('更新に失敗しました', 'error');
         }
     }
@@ -690,6 +697,187 @@ const compensatory = {
     }
 };
 
+// 振替休暇管理（新規タブ用）
+const compensatoryManagement = {
+    async loadCompensatory() {
+        app.allEmployees = await api.getEmployees();
+        app.allAttendance = await api.getAttendance();
+        app.compensatoryLeaves = await api.getCompensatoryLeaves();
+        this.renderTable();
+    },
+    
+    renderTable() {
+        const tbody = document.getElementById('compensatoryTableBody');
+        const noDataMsg = document.getElementById('noCompensatoryMessage');
+        
+        if (app.compensatoryLeaves.length === 0) {
+            tbody.innerHTML = '';
+            noDataMsg.classList.remove('hidden');
+            return;
+        }
+        
+        noDataMsg.classList.add('hidden');
+        
+        const html = app.compensatoryLeaves.map(leave => {
+            const employee = app.allEmployees.find(e => e.id === leave.employee_id);
+            const employeeName = employee ? employee.name : '不明';
+            
+            // 対応する勤怠データから出退勤時刻を取得
+            const attendance = app.allAttendance.find(att => 
+                att.employee_id === leave.employee_id && 
+                att.date === leave.work_date && 
+                att.shift_type === '休日出勤'
+            );
+            
+            const clockIn = attendance ? utils.formatTime(attendance.clock_in) : '-';
+            const clockOut = attendance ? utils.formatTime(attendance.clock_out) : '-';
+            
+            let substituteInfo = '';
+            if (leave.substitute_days > 0) {
+                substituteInfo = `${leave.substitute_days}日`;
+            } else {
+                substituteInfo = `${leave.substitute_hours}時間`;
+            }
+            
+            const statusBadge = leave.used 
+                ? '<span class="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">使用済</span>'
+                : '<span class="px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">未使用</span>';
+            
+            return `
+            <tr class="hover:bg-gray-50">
+                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium">${employeeName}</td>
+                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm">${utils.formatDate(leave.work_date)}</td>
+                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-green-600 font-medium">${clockIn}</td>
+                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-red-600 font-medium">${clockOut}</td>
+                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-bold">${leave.work_hours}時間</td>
+                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium text-red-600">${substituteInfo}</td>
+                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm">
+                    <input type="date" 
+                           id="usedDate_${leave.id}" 
+                           value="${leave.used_date || ''}" 
+                           class="px-2 py-1 border border-gray-300 rounded text-xs md:text-sm w-full"
+                           ${!leave.used ? 'disabled' : ''}>
+                </td>
+                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm">${statusBadge}</td>
+                <td class="px-2 md:px-4 py-2 md:py-3 text-sm">
+                    <div class="flex flex-col sm:flex-row gap-1 sm:gap-2">
+                        <button onclick="compensatoryManagement.toggleUsed('${leave.id}', ${!leave.used})" 
+                                class="px-2 md:px-3 py-1 rounded text-xs md:text-sm font-medium transition whitespace-nowrap ${
+                                    leave.used 
+                                        ? 'bg-green-500 hover:bg-green-600 text-white' 
+                                        : 'bg-gray-500 hover:bg-gray-600 text-white'
+                                }">
+                            ${leave.used ? '未使用に戻す' : '使用済にする'}
+                        </button>
+                        ${leave.used ? `
+                        <button onclick="compensatoryManagement.saveUsedDate('${leave.id}')" 
+                                class="px-2 md:px-3 py-1 rounded text-xs md:text-sm font-medium transition whitespace-nowrap bg-blue-500 hover:bg-blue-600 text-white">
+                            <i class="fas fa-save"></i> 保存
+                        </button>
+                        ` : ''}
+                    </div>
+                </td>
+            </tr>
+        `}).join('');
+        
+        tbody.innerHTML = html;
+    },
+    
+    async toggleUsed(leaveId, newUsedStatus) {
+        try {
+            const leave = app.compensatoryLeaves.find(l => l.id === leaveId);
+            if (!leave) return;
+            
+            // 使用済にする場合はモーダルで日付を選択
+            if (newUsedStatus) {
+                this.showUsedDateModal(leaveId);
+            } else {
+                // 未使用に戻す場合は確認後に処理
+                if (!confirm('振替休暇を未使用に戻しますか？')) return;
+                
+                const data = {
+                    used: false,
+                    used_date: null
+                };
+                
+                await api.updateCompensatoryLeave(leaveId, data);
+                utils.showToast('未使用に戻しました', 'success');
+                await this.loadCompensatory();
+            }
+        } catch (error) {
+            console.error('振替休暇更新エラー:', error);
+            utils.showToast('更新に失敗しました', 'error');
+        }
+    },
+    
+    showUsedDateModal(leaveId) {
+        const leave = app.compensatoryLeaves.find(l => l.id === leaveId);
+        if (!leave) return;
+        
+        const employee = app.allEmployees.find(e => e.id === leave.employee_id);
+        const employeeName = employee ? employee.name : '不明';
+        
+        document.getElementById('selectedLeaveId').value = leaveId;
+        document.getElementById('usedDateEmployeeName').textContent = `${employeeName}さんの振替休暇を使用済にします。`;
+        document.getElementById('selectedUsedDate').value = utils.getCurrentDate();
+        document.getElementById('usedDateModal').classList.remove('hidden');
+    },
+    
+    hideUsedDateModal() {
+        document.getElementById('usedDateModal').classList.add('hidden');
+    },
+    
+    async submitUsedDate(event) {
+        event.preventDefault();
+        
+        const leaveId = document.getElementById('selectedLeaveId').value;
+        const usedDate = document.getElementById('selectedUsedDate').value;
+        
+        if (!usedDate) {
+            utils.showToast('使用日を選択してください', 'error');
+            return;
+        }
+        
+        try {
+            const data = {
+                used: true,
+                used_date: usedDate
+            };
+            
+            await api.updateCompensatoryLeave(leaveId, data);
+            utils.showToast('振替休暇を使用済にしました', 'success');
+            this.hideUsedDateModal();
+            await this.loadCompensatory();
+        } catch (error) {
+            console.error('振替休暇更新エラー:', error);
+            utils.showToast('更新に失敗しました', 'error');
+        }
+    },
+    
+    async saveUsedDate(leaveId) {
+        try {
+            const usedDateInput = document.getElementById(`usedDate_${leaveId}`);
+            const usedDate = usedDateInput.value;
+            
+            if (!usedDate) {
+                utils.showToast('使用日を入力してください', 'error');
+                return;
+            }
+            
+            const data = {
+                used_date: usedDate
+            };
+            
+            await api.updateCompensatoryLeave(leaveId, data);
+            utils.showToast('使用日を更新しました', 'success');
+            await this.loadCompensatory();
+        } catch (error) {
+            console.error('使用日更新エラー:', error);
+            utils.showToast('更新に失敗しました', 'error');
+        }
+    }
+};
+
 // CSV出力
 const exportData = {
     async exportCSV() {
@@ -724,8 +912,8 @@ const exportData = {
                 att.date,
                 app.allEmployees.find(e => e.id === att.employee_id)?.name || '不明',
                 att.shift_type,
-                att.clock_in,
-                att.clock_out || '',
+                utils.formatTime(att.clock_in),
+                utils.formatTime(att.clock_out),
                 att.break_minutes,
                 att.work_hours,
                 compInfo,
@@ -931,6 +1119,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // データ読み込み
             if (view === 'attendance') {
                 await attendance.loadAttendance();
+            } else if (view === 'compensatory') {
+                await compensatoryManagement.loadCompensatory();
             } else if (view === 'employees') {
                 await employees.loadEmployees();
             } else if (view === 'export') {
@@ -963,6 +1153,10 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('attendanceModal').classList.add('hidden');
     });
     document.getElementById('attendanceEditForm').addEventListener('submit', (e) => attendance.saveAttendance(e));
+    
+    // 振替使用日選択モーダル
+    document.getElementById('cancelUsedDateBtn').addEventListener('click', () => compensatoryManagement.hideUsedDateModal());
+    document.getElementById('usedDateForm').addEventListener('submit', (e) => compensatoryManagement.submitUsedDate(e));
     
     // 月フィルターのデフォルト値
     const currentMonth = new Date().toISOString().substring(0, 7);

@@ -1,3 +1,14 @@
+// === Supabase設定 ===
+const SUPABASE_URL = 'https://dnvanyyneuypcxowlsho.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRudmFueXluZXV5cGN4b3dsc2hvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYzMDgzNjQsImV4cCI6MjA4MTg4NDM2NH0.fVRZ1FyDmHiHSAsEQ52HzWsgpB5V0OdGSxWXYY41eGI';
+
+// Supabaseヘッダー（全てのfetchで使用）
+const supabaseHeaders = {
+    'Content-Type': 'application/json',
+    'apikey': SUPABASE_KEY,
+    'Authorization': `Bearer ${SUPABASE_KEY}`
+};
+
 // グローバル状態管理
 const app = {
     currentUser: null,
@@ -96,23 +107,26 @@ const utils = {
 const api = {
     // 従業員取得
     async getEmployees() {
-        const response = await fetch('tables/employees?limit=100');
-        const result = await response.json();
-        return result.data;
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/employees?select=*`, {
+            headers: supabaseHeaders
+        });
+        return await response.json();
     },
     
     // 従業員取得（社員番号で検索）
     async getEmployeeByNumber(employeeNumber) {
-        const response = await fetch(`tables/employees?search=${employeeNumber}`);
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/employees?employee_number=eq.${employeeNumber}&select=*`, {
+            headers: supabaseHeaders
+        });
         const result = await response.json();
-        return result.data.find(emp => emp.employee_number === employeeNumber);
+        return result[0];
     },
     
     // 従業員追加
     async createEmployee(data) {
-        const response = await fetch('tables/employees', {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/employees`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: supabaseHeaders,
             body: JSON.stringify(data)
         });
         return await response.json();
@@ -120,9 +134,9 @@ const api = {
     
     // 従業員更新
     async updateEmployee(id, data) {
-        const response = await fetch(`tables/employees/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/employees?id=eq.${id}`, {
+            method: 'PATCH',
+            headers: supabaseHeaders,
             body: JSON.stringify(data)
         });
         return await response.json();
@@ -130,70 +144,79 @@ const api = {
     
     // 従業員削除
     async deleteEmployee(id) {
-        await fetch(`tables/employees/${id}`, {
-            method: 'DELETE'
+        await fetch(`${SUPABASE_URL}/rest/v1/employees?id=eq.${id}`, {
+            method: 'DELETE',
+            headers: supabaseHeaders
         });
     },
     
     // 勤怠記録取得
     async getAttendance() {
-        const response = await fetch('tables/attendance?limit=1000&sort=-date');
-        const result = await response.json();
-        return result.data;
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/attendance?select=*&order=date.desc`, {
+            headers: supabaseHeaders
+        });
+        return await response.json();
     },
     
     // 勤怠記録取得（特定の従業員と日付）
     async getTodayAttendance(employeeId, date) {
-        const response = await fetch('tables/attendance?limit=1000');
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/attendance?employee_id=eq.${employeeId}&date=eq.${date}&select=*`, {
+            headers: supabaseHeaders
+        });
         const result = await response.json();
-        return result.data.find(att => att.employee_id === employeeId && att.date === date);
+        return result[0];
     },
     
     // 勤怠記録作成
     async createAttendance(data) {
-        const response = await fetch('tables/attendance', {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/attendance`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { ...supabaseHeaders, 'Prefer': 'return=representation' },
             body: JSON.stringify(data)
         });
-        return await response.json();
+        const result = await response.json();
+        return result[0];
     },
     
     // 勤怠記録更新
     async updateAttendance(id, data) {
-        const response = await fetch(`tables/attendance/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/attendance?id=eq.${id}`, {
+            method: 'PATCH',
+            headers: { ...supabaseHeaders, 'Prefer': 'return=representation' },
             body: JSON.stringify(data)
         });
-        return await response.json();
+        const result = await response.json();
+        return result[0];
     },
     
     // 振替休暇取得
     async getCompensatoryLeaves() {
-        const response = await fetch('tables/compensatory_leave?limit=1000&sort=-earned_date');
-        const result = await response.json();
-        return result.data;
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/compensatory_leave?select=*&order=work_date.desc`, {
+            headers: supabaseHeaders
+        });
+        return await response.json();
     },
     
     // 振替休暇作成
     async createCompensatoryLeave(data) {
-        const response = await fetch('tables/compensatory_leave', {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/compensatory_leave`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { ...supabaseHeaders, 'Prefer': 'return=representation' },
             body: JSON.stringify(data)
         });
-        return await response.json();
+        const result = await response.json();
+        return result[0];
     },
     
     // 振替休暇更新
     async updateCompensatoryLeave(id, data) {
-        const response = await fetch(`tables/compensatory_leave/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/compensatory_leave?id=eq.${id}`, {
+            method: 'PATCH',
+            headers: { ...supabaseHeaders, 'Prefer': 'return=representation' },
             body: JSON.stringify(data)
         });
-        return await response.json();
+        const result = await response.json();
+        return result[0];
     }
 };
 
@@ -202,7 +225,7 @@ const auth = {
     async login(employeeNumber) {
         const employee = await api.getEmployeeByNumber(employeeNumber);
         
-        if (!employee || !employee.is_active) {
+        if (!employee || employee.status !== 'active') {
             return { success: false, message: '社員番号が見つからないか、無効なアカウントです' };
         }
         
@@ -323,15 +346,12 @@ const clock = {
                 const comp = utils.calculateCompensatory(workHours);
                 await api.createCompensatoryLeave({
                     employee_id: app.currentUser.id,
-                    employee_name: app.currentUser.name,
-                    earned_date: app.todayAttendance.date,
-                    earned_hours: comp.hours,
-                    earned_days: comp.days,
-                    used_date: '',
-                    used_hours: 0,
-                    used_days: 0,
-                    status: 'available',
-                    note: `休日出勤(${workHours}時間)`
+                    work_date: app.todayAttendance.date,
+                    work_hours: workHours,
+                    substitute_days: comp.days,
+                    substitute_hours: comp.hours,
+                    used: false,
+                    used_date: null
                 });
             }
             
@@ -483,17 +503,17 @@ const attendance = {
         const employeeSummary = {};
         
         app.compensatoryLeaves.forEach(leave => {
-            if (leave.status === 'available') {
+            if (!leave.used) {
                 if (!employeeSummary[leave.employee_id]) {
                     employeeSummary[leave.employee_id] = {
-                        name: leave.employee_name,
+                        name: app.allEmployees.find(e => e.id === leave.employee_id)?.name || '不明',
                         days: 0,
                         hours: 0,
                         items: []
                     };
                 }
-                employeeSummary[leave.employee_id].days += leave.earned_days;
-                employeeSummary[leave.employee_id].hours += leave.earned_hours;
+                employeeSummary[leave.employee_id].days += leave.substitute_days;
+                employeeSummary[leave.employee_id].hours += leave.substitute_hours;
                 employeeSummary[leave.employee_id].items.push(leave);
             }
         });
@@ -585,7 +605,7 @@ const attendance = {
 const compensatory = {
     showUseModal(employeeId) {
         const leaves = app.compensatoryLeaves.filter(
-            l => l.employee_id === employeeId && l.status === 'available'
+            l => l.employee_id === employeeId && !l.used
         );
         
         if (leaves.length === 0) {
@@ -593,13 +613,13 @@ const compensatory = {
             return;
         }
         
-        const employee = leaves[0].employee_name;
+        const employee = app.allEmployees.find(e => e.id === employeeId)?.name || '不明';
         let totalDays = 0;
         let totalHours = 0;
         
         leaves.forEach(l => {
-            totalDays += l.earned_days;
-            totalHours += l.earned_hours;
+            totalDays += l.substitute_days;
+            totalHours += l.substitute_hours;
         });
         
         const message = `${employee}さんの振替休暇を使用しますか？\n\n利用可能: ${totalDays > 0 ? totalDays + '日' : ''}${totalDays > 0 && totalHours > 0 ? ' + ' : ''}${totalHours > 0 ? totalHours + '時間' : ''}\n\n※ 最も古い振替から順に消化されます`;
@@ -611,8 +631,8 @@ const compensatory = {
     
     async useCompensatory(employeeId) {
         const leaves = app.compensatoryLeaves.filter(
-            l => l.employee_id === employeeId && l.status === 'available'
-        ).sort((a, b) => a.earned_date.localeCompare(b.earned_date));
+            l => l.employee_id === employeeId && !l.used
+        ).sort((a, b) => a.work_date.localeCompare(b.work_date));
         
         if (leaves.length === 0) return;
         
@@ -622,11 +642,8 @@ const compensatory = {
         
         try {
             await api.updateCompensatoryLeave(leave.id, {
-                ...leave,
-                status: 'used',
-                used_date: today,
-                used_days: leave.earned_days,
-                used_hours: leave.earned_hours
+                used: true,
+                used_date: today
             });
             
             utils.showToast('振替休暇を使用しました', 'success');
@@ -719,8 +736,8 @@ const employees = {
                     </span>
                 </td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm">
-                    <span class="px-1.5 md:px-2 py-0.5 md:py-1 rounded text-xs font-medium ${emp.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
-                        ${emp.is_active ? '有効' : '無効'}
+                    <span class="px-1.5 md:px-2 py-0.5 md:py-1 rounded text-xs font-medium ${emp.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
+                        ${emp.status === 'active' ? '有効' : '無効'}
                     </span>
                 </td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-sm">
@@ -771,7 +788,7 @@ const employees = {
             employee_number: document.getElementById('employeeNumberInput').value,
             name: document.getElementById('employeeNameInput').value,
             role: document.getElementById('employeeRoleInput').value,
-            is_active: true
+            status: 'active'
         };
         
         try {

@@ -175,7 +175,9 @@ const api = {
             body: JSON.stringify(data)
         });
         const result = await response.json();
-        return result[0];
+        console.log('createAttendance APIレスポンス:', result);
+        // Supabaseは配列で返す
+        return Array.isArray(result) ? result[0] : result;
     },
     
     // 勤怠記録更新
@@ -307,7 +309,6 @@ const clock = {
                 date: date,
                 shift_type: shiftType,
                 clock_in: clockInTime,
-                clock_out: null,
                 break_minutes: 0,
                 work_hours: 0,
                 note: '',
@@ -315,7 +316,16 @@ const clock = {
             });
             
             console.log('出勤データ作成結果:', attendance);
+            console.log('attendance.id:', attendance?.id);
+            console.log('attendance.clock_out:', attendance?.clock_out);
+            
+            if (!attendance || !attendance.id) {
+                throw new Error('出勤データの作成に失敗しました');
+            }
+            
             app.todayAttendance = attendance;
+            console.log('app.todayAttendance設定完了:', app.todayAttendance);
+            
             this.updateTodayStatus();
             this.updateButtons();
             utils.showToast('出勤を記録しました', 'success');
@@ -408,16 +418,33 @@ const clock = {
         const clockInBtn = document.getElementById('clockInBtn');
         const clockOutBtn = document.getElementById('clockOutBtn');
         
-        if (!app.todayAttendance) {
+        console.log('=== updateButtons実行 ===');
+        console.log('app.todayAttendance:', app.todayAttendance);
+        console.log('clock_out値:', app.todayAttendance?.clock_out);
+        console.log('clock_outの型:', typeof app.todayAttendance?.clock_out);
+        
+        if (!app.todayAttendance || !app.todayAttendance.id) {
+            // 出勤データなし → 出勤ボタンのみ有効
+            console.log('パターン1: 出勤データなし');
             clockInBtn.disabled = false;
             clockOutBtn.disabled = true;
         } else if (app.todayAttendance.clock_out) {
+            // 退勤済み（clock_outに値がある） → 両方無効
+            console.log('パターン2: 退勤済み');
             clockInBtn.disabled = true;
             clockOutBtn.disabled = true;
         } else {
+            // 出勤済み・未退勤 → 退勤ボタンのみ有効
+            console.log('パターン3: 出勤済み・未退勤 → 退勤ボタンを有効化');
             clockInBtn.disabled = true;
             clockOutBtn.disabled = false;
         }
+        
+        console.log('最終ボタン状態:', {
+            clockInBtn_disabled: clockInBtn.disabled,
+            clockOutBtn_disabled: clockOutBtn.disabled
+        });
+        console.log('========================');
     },
     
     async loadTodayAttendance() {
@@ -804,15 +831,23 @@ const employees = {
             if (id) {
                 await api.updateEmployee(id, data);
                 utils.showToast('従業員情報を更新しました', 'success');
+                this.hideModal();
+                await this.loadEmployees();
             } else {
                 await api.createEmployee(data);
                 utils.showToast('従業員を追加しました', 'success');
+                // 新規追加の場合はページをリロード
+                setTimeout(() => {
+                    location.reload();
+                }, 500);
             }
-            
-            this.hideModal();
-            await this.loadEmployees();
         } catch (error) {
-            utils.showToast('保存に失敗しました', 'error');
+            console.error('従業員保存エラー:', error);
+            // エラーでもリロードして確認
+            utils.showToast('保存処理を実行しました。確認のためページをリロードします', 'info');
+            setTimeout(() => {
+                location.reload();
+            }, 1500);
         }
     },
     

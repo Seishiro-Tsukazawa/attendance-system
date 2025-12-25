@@ -304,21 +304,23 @@ const clock = {
         try {
             const attendance = await api.createAttendance({
                 employee_id: app.currentUser.id,
-                employee_name: app.currentUser.name,
                 date: date,
                 shift_type: shiftType,
                 clock_in: clockInTime,
-                clock_out: '',
+                clock_out: null,
                 break_minutes: 0,
                 work_hours: 0,
-                note: ''
+                note: '',
+                status: 'pending'
             });
             
+            console.log('出勤データ作成結果:', attendance);
             app.todayAttendance = attendance;
             this.updateTodayStatus();
             this.updateButtons();
             utils.showToast('出勤を記録しました', 'success');
         } catch (error) {
+            console.error('出勤エラー:', error);
             utils.showToast('出勤の記録に失敗しました', 'error');
         }
     },
@@ -429,6 +431,7 @@ const clock = {
 // 勤怠一覧
 const attendance = {
     async loadAttendance() {
+        app.allEmployees = await api.getEmployees(); // 従業員データを取得
         app.allAttendance = await api.getAttendance();
         app.compensatoryLeaves = await api.getCompensatoryLeaves();
         
@@ -449,6 +452,9 @@ const attendance = {
         noDataMsg.classList.add('hidden');
         
         const html = app.filteredAttendance.map(att => {
+            // employee_idから従業員名を取得
+            const employee = app.allEmployees.find(e => e.id === att.employee_id);
+            const employeeName = employee ? employee.name : '不明';
             let compensatoryInfo = '-';
             if (att.shift_type === '休日出勤' && att.work_hours > 0) {
                 const comp = utils.calculateCompensatory(att.work_hours);
@@ -468,7 +474,7 @@ const attendance = {
                     <span class="hidden md:inline">${utils.formatDate(att.date)}</span>
                     <span class="md:hidden">${shortDate}</span>
                 </td>
-                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium">${att.employee_name}</td>
+                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium">${employeeName}</td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm">
                     <span class="px-1.5 md:px-2 py-0.5 md:py-1 rounded text-xs font-medium ${
                         att.shift_type === '早番' ? 'bg-yellow-100 text-yellow-800' : 
@@ -556,9 +562,12 @@ const attendance = {
         const att = app.allAttendance.find(a => a.id === id);
         if (!att) return;
         
+        const employee = app.allEmployees.find(e => e.id === att.employee_id);
+        const employeeName = employee ? employee.name : '不明';
+        
         document.getElementById('editAttendanceId').value = att.id;
         document.getElementById('editDate').value = att.date;
-        document.getElementById('editEmployeeName').value = att.employee_name;
+        document.getElementById('editEmployeeName').value = employeeName;
         document.getElementById('editShiftType').value = att.shift_type;
         document.getElementById('editClockIn').value = att.clock_in;
         document.getElementById('editClockOut').value = att.clock_out || '';
@@ -686,7 +695,7 @@ const exportData = {
             
             return [
                 att.date,
-                att.employee_name,
+                app.allEmployees.find(e => e.id === att.employee_id)?.name || '不明',
                 att.shift_type,
                 att.clock_in,
                 att.clock_out || '',

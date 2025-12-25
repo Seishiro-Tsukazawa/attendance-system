@@ -373,11 +373,15 @@ const clock = {
         const actualWorkMinutes = diffMinutes - breakMinutes;
         const workHours = Math.round((actualWorkMinutes / 60) * 10) / 10;
         
+        // 残業時間を計算（8時間を超えた分）
+        const overtimeHours = workHours > 8 ? Math.round((workHours - 8) * 10) / 10 : 0;
+        
         try {
             const updatedData = {
                 clock_out: clockOutTime,
                 break_minutes: breakMinutes,
-                work_hours: workHours
+                work_hours: workHours,
+                overtime_hours: overtimeHours
             };
             
             const updated = await api.updateAttendance(app.todayAttendance.id, updatedData);
@@ -493,8 +497,22 @@ const attendance = {
         app.allAttendance = await api.getAttendance();
         app.compensatoryLeaves = await api.getCompensatoryLeaves();
         
+        // 管理者の場合は従業員フィルターを表示＆従業員リストを生成
+        if (app.currentUser.role === 'admin') {
+            document.getElementById('employeeFilter').classList.remove('hidden');
+            this.populateEmployeeFilter();
+        }
+        
         // デフォルトで当月のデータを表示
         this.filterByMonth();
+    },
+    
+    populateEmployeeFilter() {
+        const select = document.getElementById('employeeFilter');
+        const options = app.allEmployees.map(emp => 
+            `<option value="${emp.id}">${emp.name}</option>`
+        ).join('');
+        select.innerHTML = '<option value="">全員</option>' + options;
     },
     
     renderTable() {
@@ -546,6 +564,7 @@ const attendance = {
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-red-600 font-medium">${utils.formatTime(att.clock_out)}</td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm">${att.break_minutes}分</td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-bold">${att.work_hours}時間</td>
+                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-bold ${att.overtime_hours > 0 ? 'text-orange-600' : 'text-gray-400'}">${att.overtime_hours || 0}時間</td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium text-red-600">${compensatoryInfo}</td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-gray-600">${att.note || '-'}</td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-sm">
@@ -557,18 +576,128 @@ const attendance = {
         `}).join('');
         
         tbody.innerHTML = html;
+        this.updateMonthlySummary();
+        this.checkOvertimeAlert();
+    },
+    
+    updateMonthlySummary() {
+        const summaryContent = document.getElementById('monthlySummaryContent');
+        const currentMonth = new Date().toISOString().substring(0, 7);
+        
+        // 現在表示中のデータから集計
+        let totalDays = 0;
+        let totalWorkHours = 0;
+        let totalOvertimeHours = 0;
+        let totalCompensatoryDays = 0;
+        let totalCompensatoryHours = 0;
+        
+        app.filteredAttendance.forEach(att => {
+            if (att.clock_out) {
+                totalDays++;
+                totalWorkHours += att.work_hours || 0;
+                totalOvertimeHours += att.overtime_hours || 0;
+            }
+        });
+        
+        // 振替休暇の集計（表示中のユーザーのみ）
+        const displayedEmployeeIds = [...new Set(app.filteredAttendance.map(att => att.employee_id))];
+        app.compensatoryLeaves.forEach(leave => {
+            if (!leave.used && displayedEmployeeIds.includes(leave.employee_id)) {
+                totalCompensatoryDays += leave.substitute_days || 0;
+                totalCompensatoryHours += leave.substitute_hours || 0;
+            }
+        });
+        
+        const html = `
+            <div class="bg-white rounded-lg p-3 shadow-sm">
+                <div class="text-xs text-gray-600 mb-1">出勤日数</div>
+                <div class="text-lg md:text-xl font-bold text-blue-600">${totalDays}日</div>
+            </div>
+            <div class="bg-white rounded-lg p-3 shadow-sm">
+                <div class="text-xs text-gray-600 mb-1">総勤務時間</div>
+                <div class="text-lg md:text-xl font-bold text-green-600">${Math.round(totalWorkHours * 10) / 10}h</div>
+            </div>
+            <div class="bg-white rounded-lg p-3 shadow-sm">
+                <div class="text-xs text-gray-600 mb-1">残業時間</div>
+                <div class="text-lg md:text-xl font-bold ${totalOvertimeHours >= 15 ? 'text-orange-600' : 'text-gray-600'}">${Math.round(totalOvertimeHours * 10) / 10}h</div>
+            </div>
+            <div class="bg-white rounded-lg p-3 shadow-sm">
+                <div class="text-xs text-gray-600 mb-1">振替残</div>
+                <div class="text-lg md:text-xl font-bold text-red-600">
+                    ${totalCompensatoryDays > 0 ? totalCompensatoryDays + '日' : ''}${totalCompensatoryDays > 0 && totalCompensatoryHours > 0 ? '+' : ''}${totalCompensatoryHours > 0 ? totalCompensatoryHours + 'h' : ''}${totalCompensatoryDays === 0 && totalCompensatoryHours === 0 ? '0' : ''}
+                </div>
+            </div>
+        `;
+        
+        summaryContent.innerHTML = html;
+    },
+    
+    checkOvertimeAlert() {
+        const alertDiv = document.getElementById('overtimeAlert');
+        const alertContent = document.getElementById('overtimeAlertContent');
+        
+        // 管理者のみアラートを表示
+        if (app.currentUser.role !== 'admin') {
+            alertDiv.classList.add('hidden');
+            return;
+        }
+        
+        const currentMonth = new Date().toISOString().substring(0, 7);
+        
+        // 従業員ごとの残業時間を集計
+        const employeeOvertime = {};
+        
+        app.allAttendance.forEach(att => {
+            if (att.date.startsWith(currentMonth) && att.clock_out) {
+                if (!employeeOvertime[att.employee_id]) {
+                    employeeOvertime[att.employee_id] = {
+                        name: app.allEmployees.find(e => e.id === att.employee_id)?.name || '不明',
+                        hours: 0
+                    };
+                }
+                employeeOvertime[att.employee_id].hours += att.overtime_hours || 0;
+            }
+        });
+        
+        // 15時間超過している従業員をフィルター
+        const overEmployees = Object.values(employeeOvertime).filter(emp => emp.hours >= 15);
+        
+        if (overEmployees.length > 0) {
+            const html = overEmployees.map(emp => 
+                `<div class="mb-1">・<strong>${emp.name}</strong>さん: ${Math.round(emp.hours * 10) / 10}時間</div>`
+            ).join('');
+            alertContent.innerHTML = `以下の従業員の残業時間が15時間を超えています：<br>${html}`;
+            alertDiv.classList.remove('hidden');
+        } else {
+            alertDiv.classList.add('hidden');
+        }
     },
     
     filterByMonth() {
         const monthInput = document.getElementById('monthFilter');
+        const employeeSelect = document.getElementById('employeeFilter');
         const targetMonth = monthInput.value;
+        const selectedEmployeeId = employeeSelect.value;
         
-        if (!targetMonth) {
-            app.filteredAttendance = [...app.allAttendance];
-        } else {
-            app.filteredAttendance = app.allAttendance.filter(att => att.date.startsWith(targetMonth));
+        // まず全データから開始
+        let filtered = [...app.allAttendance];
+        
+        // 一般ユーザーの場合は自分のデータのみ
+        if (app.currentUser.role !== 'admin') {
+            filtered = filtered.filter(att => att.employee_id === app.currentUser.id);
         }
         
+        // 管理者で従業員が選択されている場合
+        if (app.currentUser.role === 'admin' && selectedEmployeeId) {
+            filtered = filtered.filter(att => att.employee_id === selectedEmployeeId);
+        }
+        
+        // 月でフィルタリング
+        if (targetMonth) {
+            filtered = filtered.filter(att => att.date.startsWith(targetMonth));
+        }
+        
+        app.filteredAttendance = filtered;
         this.renderTable();
     },
     
@@ -623,12 +752,16 @@ const attendance = {
             workHours = Math.round((actualWorkMinutes / 60) * 10) / 10;
         }
         
+        // 残業時間を計算（8時間を超えた分）
+        const overtimeHours = workHours > 8 ? Math.round((workHours - 8) * 10) / 10 : 0;
+        
         const data = {
             shift_type: document.getElementById('editShiftType').value,
             clock_in: clockInTimestamp,
             clock_out: clockOutTimestamp,
             break_minutes: breakMinutes,
             work_hours: workHours,
+            overtime_hours: overtimeHours,
             note: document.getElementById('editNote').value
         };
         
@@ -641,6 +774,164 @@ const attendance = {
             console.error('勤怠更新エラー:', error);
             utils.showToast('更新に失敗しました', 'error');
         }
+    }
+};
+
+// ダッシュボード管理
+const dashboard = {
+    async loadDashboard() {
+        app.allEmployees = await api.getEmployees();
+        app.allAttendance = await api.getAttendance();
+        app.compensatoryLeaves = await api.getCompensatoryLeaves();
+        
+        this.populateEmployeeFilter();
+        
+        // デフォルトで当月と現在のユーザーを設定
+        const currentMonth = new Date().toISOString().substring(0, 7);
+        document.getElementById('dashboardMonthFilter').value = currentMonth;
+        
+        this.updateDashboard();
+    },
+    
+    populateEmployeeFilter() {
+        const select = document.getElementById('dashboardEmployeeFilter');
+        
+        if (app.currentUser.role === 'admin') {
+            // 管理者：全員選択可能
+            const options = app.allEmployees.map(emp => 
+                `<option value="${emp.id}">${emp.name}</option>`
+            ).join('');
+            select.innerHTML = options;
+        } else {
+            // 一般ユーザー：自分のみ
+            select.innerHTML = `<option value="${app.currentUser.id}">${app.currentUser.name}</option>`;
+            select.disabled = true;
+        }
+    },
+    
+    updateDashboard() {
+        const selectedEmployeeId = document.getElementById('dashboardEmployeeFilter').value;
+        const selectedMonth = document.getElementById('dashboardMonthFilter').value;
+        
+        if (!selectedEmployeeId || !selectedMonth) return;
+        
+        const employee = app.allEmployees.find(e => e.id === selectedEmployeeId);
+        const employeeName = employee ? employee.name : '不明';
+        
+        // タイトル更新
+        document.getElementById('dashboardEmployeeName').textContent = `${employeeName}さんの今月のサマリー`;
+        
+        // 対象月のデータをフィルタリング
+        const filteredAttendance = app.allAttendance.filter(att => 
+            att.employee_id === selectedEmployeeId && att.date.startsWith(selectedMonth)
+        );
+        
+        // サマリー計算
+        let totalDays = 0;
+        let totalWorkHours = 0;
+        let totalOvertimeHours = 0;
+        
+        filteredAttendance.forEach(att => {
+            if (att.clock_out) {
+                totalDays++;
+                totalWorkHours += att.work_hours || 0;
+                totalOvertimeHours += att.overtime_hours || 0;
+            }
+        });
+        
+        // 振替休暇の集計
+        let totalCompensatoryDays = 0;
+        let totalCompensatoryHours = 0;
+        
+        app.compensatoryLeaves.forEach(leave => {
+            if (!leave.used && leave.employee_id === selectedEmployeeId) {
+                totalCompensatoryDays += leave.substitute_days || 0;
+                totalCompensatoryHours += leave.substitute_hours || 0;
+            }
+        });
+        
+        // サマリー表示
+        const summaryHtml = `
+            <div class="bg-white rounded-xl p-4 shadow-md border-l-4 border-blue-500">
+                <div class="text-xs text-gray-600 mb-2">出勤日数</div>
+                <div class="text-2xl md:text-3xl font-bold text-blue-600">${totalDays}<span class="text-sm">日</span></div>
+            </div>
+            <div class="bg-white rounded-xl p-4 shadow-md border-l-4 border-green-500">
+                <div class="text-xs text-gray-600 mb-2">総勤務時間</div>
+                <div class="text-2xl md:text-3xl font-bold text-green-600">${Math.round(totalWorkHours * 10) / 10}<span class="text-sm">h</span></div>
+            </div>
+            <div class="bg-white rounded-xl p-4 shadow-md border-l-4 ${totalOvertimeHours >= 15 ? 'border-orange-500' : 'border-gray-400'}">
+                <div class="text-xs text-gray-600 mb-2">残業時間</div>
+                <div class="text-2xl md:text-3xl font-bold ${totalOvertimeHours >= 15 ? 'text-orange-600' : 'text-gray-600'}">${Math.round(totalOvertimeHours * 10) / 10}<span class="text-sm">h</span></div>
+            </div>
+            <div class="bg-white rounded-xl p-4 shadow-md border-l-4 border-red-500">
+                <div class="text-xs text-gray-600 mb-2">振替残</div>
+                <div class="text-2xl md:text-3xl font-bold text-red-600">
+                    ${totalCompensatoryDays > 0 ? totalCompensatoryDays + '<span class="text-sm">日</span>' : ''}${totalCompensatoryDays > 0 && totalCompensatoryHours > 0 ? '+' : ''}${totalCompensatoryHours > 0 ? totalCompensatoryHours + '<span class="text-sm">h</span>' : ''}${totalCompensatoryDays === 0 && totalCompensatoryHours === 0 ? '0' : ''}
+                </div>
+            </div>
+        `;
+        
+        document.getElementById('dashboardSummaryContent').innerHTML = summaryHtml;
+        
+        // 残業時間アラート
+        this.checkOvertimeAlert(totalOvertimeHours, employeeName);
+        
+        // 最近の勤怠データ表示
+        this.renderRecentAttendance(filteredAttendance);
+    },
+    
+    checkOvertimeAlert(overtimeHours, employeeName) {
+        const alertDiv = document.getElementById('dashboardOvertimeAlert');
+        const alertContent = document.getElementById('dashboardOvertimeAlertContent');
+        
+        if (overtimeHours >= 15) {
+            alertContent.innerHTML = `${employeeName}さんの今月の残業時間が<strong>${Math.round(overtimeHours * 10) / 10}時間</strong>に達しています。健康管理にご注意ください。`;
+            alertDiv.classList.remove('hidden');
+        } else {
+            alertDiv.classList.add('hidden');
+        }
+    },
+    
+    renderRecentAttendance(attendanceData) {
+        const tbody = document.getElementById('dashboardRecentAttendance');
+        const noDataMsg = document.getElementById('dashboardNoData');
+        
+        // 日付降順でソート（最新10件）
+        const recentData = attendanceData
+            .sort((a, b) => b.date.localeCompare(a.date))
+            .slice(0, 10);
+        
+        if (recentData.length === 0) {
+            tbody.innerHTML = '';
+            noDataMsg.classList.remove('hidden');
+            return;
+        }
+        
+        noDataMsg.classList.add('hidden');
+        
+        const html = recentData.map(att => {
+            const shortDate = att.date.split('-').slice(1).join('/');
+            return `
+            <tr class="hover:bg-gray-50">
+                <td class="px-3 py-2 text-xs">${shortDate}</td>
+                <td class="px-3 py-2 text-xs">
+                    <span class="px-2 py-1 rounded text-xs font-medium ${
+                        att.shift_type === '早番' ? 'bg-yellow-100 text-yellow-800' : 
+                        att.shift_type === '遅番' ? 'bg-blue-100 text-blue-800' : 
+                        'bg-red-100 text-red-800'
+                    }">
+                        ${att.shift_type}
+                    </span>
+                </td>
+                <td class="px-3 py-2 text-xs text-green-600 font-medium">${utils.formatTime(att.clock_in)}</td>
+                <td class="px-3 py-2 text-xs text-red-600 font-medium">${utils.formatTime(att.clock_out)}</td>
+                <td class="px-3 py-2 text-xs font-bold">${att.work_hours || 0}h</td>
+                <td class="px-3 py-2 text-xs font-bold ${att.overtime_hours > 0 ? 'text-orange-600' : 'text-gray-400'}">${att.overtime_hours || 0}h</td>
+            </tr>
+        `}).join('');
+        
+        tbody.innerHTML = html;
     }
 };
 
@@ -703,6 +994,14 @@ const compensatoryManagement = {
         app.allEmployees = await api.getEmployees();
         app.allAttendance = await api.getAttendance();
         app.compensatoryLeaves = await api.getCompensatoryLeaves();
+        
+        // 一般ユーザーの場合は自分のデータのみにフィルタリング
+        if (app.currentUser.role !== 'admin') {
+            app.compensatoryLeaves = app.compensatoryLeaves.filter(
+                leave => leave.employee_id === app.currentUser.id
+            );
+        }
+        
         this.renderTable();
     },
     
@@ -745,24 +1044,24 @@ const compensatoryManagement = {
             
             return `
             <tr class="hover:bg-gray-50">
-                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium">${employeeName}</td>
-                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm">${utils.formatDate(leave.work_date)}</td>
-                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-green-600 font-medium">${clockIn}</td>
-                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-red-600 font-medium">${clockOut}</td>
-                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-bold">${leave.work_hours}時間</td>
-                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium text-red-600">${substituteInfo}</td>
-                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm">
+                <td class="px-3 py-3 text-xs font-medium whitespace-nowrap">${employeeName}</td>
+                <td class="px-3 py-3 text-xs whitespace-nowrap">${utils.formatDate(leave.work_date)}</td>
+                <td class="px-3 py-3 text-xs text-green-600 font-medium whitespace-nowrap">${clockIn}</td>
+                <td class="px-3 py-3 text-xs text-red-600 font-medium whitespace-nowrap">${clockOut}</td>
+                <td class="px-3 py-3 text-xs font-bold whitespace-nowrap">${leave.work_hours}時間</td>
+                <td class="px-3 py-3 text-xs font-medium text-red-600 whitespace-nowrap">${substituteInfo}</td>
+                <td class="px-3 py-3 text-xs">
                     <input type="date" 
                            id="usedDate_${leave.id}" 
                            value="${leave.used_date || ''}" 
-                           class="px-2 py-1 border border-gray-300 rounded text-xs md:text-sm w-full"
+                           class="px-2 py-1 border border-gray-300 rounded text-xs w-32"
                            ${!leave.used ? 'disabled' : ''}>
                 </td>
-                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm">${statusBadge}</td>
-                <td class="px-2 md:px-4 py-2 md:py-3 text-sm">
-                    <div class="flex flex-col sm:flex-row gap-1 sm:gap-2">
+                <td class="px-3 py-3 text-xs whitespace-nowrap">${statusBadge}</td>
+                <td class="px-3 py-3 text-xs">
+                    <div class="flex gap-1">
                         <button onclick="compensatoryManagement.toggleUsed('${leave.id}', ${!leave.used})" 
-                                class="px-2 md:px-3 py-1 rounded text-xs md:text-sm font-medium transition whitespace-nowrap ${
+                                class="px-2 py-1 rounded text-xs font-medium transition whitespace-nowrap ${
                                     leave.used 
                                         ? 'bg-green-500 hover:bg-green-600 text-white' 
                                         : 'bg-gray-500 hover:bg-gray-600 text-white'
@@ -771,7 +1070,7 @@ const compensatoryManagement = {
                         </button>
                         ${leave.used ? `
                         <button onclick="compensatoryManagement.saveUsedDate('${leave.id}')" 
-                                class="px-2 md:px-3 py-1 rounded text-xs md:text-sm font-medium transition whitespace-nowrap bg-blue-500 hover:bg-blue-600 text-white">
+                                class="px-2 py-1 rounded text-xs font-medium transition whitespace-nowrap bg-blue-500 hover:bg-blue-600 text-white">
                             <i class="fas fa-save"></i> 保存
                         </button>
                         ` : ''}
@@ -900,7 +1199,7 @@ const exportData = {
         }
         
         // CSV生成
-        const headers = ['日付', '氏名', 'シフト', '出勤時刻', '退勤時刻', '休憩時間(分)', '勤務時間(時間)', '振替', '備考'];
+        const headers = ['日付', '氏名', 'シフト', '出勤時刻', '退勤時刻', '休憩時間(分)', '勤務時間(時間)', '残業時間(時間)', '振替', '備考'];
         const rows = filtered.map(att => {
             let compInfo = '';
             if (att.shift_type === '休日出勤' && att.work_hours > 0) {
@@ -916,6 +1215,7 @@ const exportData = {
                 utils.formatTime(att.clock_out),
                 att.break_minutes,
                 att.work_hours,
+                att.overtime_hours || 0,
                 compInfo,
                 att.note || ''
             ];
@@ -1117,7 +1417,9 @@ document.addEventListener('DOMContentLoaded', () => {
             showView(view);
             
             // データ読み込み
-            if (view === 'attendance') {
+            if (view === 'dashboard') {
+                await dashboard.loadDashboard();
+            } else if (view === 'attendance') {
                 await attendance.loadAttendance();
             } else if (view === 'compensatory') {
                 await compensatoryManagement.loadCompensatory();
@@ -1136,6 +1438,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // 打刻ボタン
     document.getElementById('clockInBtn').addEventListener('click', () => clock.clockIn());
     document.getElementById('clockOutBtn').addEventListener('click', () => clock.clockOut());
+    
+    // ダッシュボードフィルター
+    document.getElementById('dashboardFilterBtn').addEventListener('click', () => dashboard.updateDashboard());
+    document.getElementById('dashboardEmployeeFilter').addEventListener('change', () => dashboard.updateDashboard());
+    document.getElementById('dashboardMonthFilter').addEventListener('change', () => dashboard.updateDashboard());
     
     // 勤怠フィルター
     document.getElementById('filterBtn').addEventListener('click', () => attendance.filterByMonth());

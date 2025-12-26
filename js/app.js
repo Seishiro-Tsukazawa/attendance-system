@@ -1391,20 +1391,22 @@ const compensatoryManagement = {
             
             return `
             <tr class="hover:bg-gray-50">
-                <td class="px-3 py-3 text-xs sticky-col-left" style="position: sticky; left: 0; z-index: 5; background-color: white;">
-                    <div class="flex gap-1">
+                <td class="px-3 py-3 text-xs sticky-col-left" style="position: sticky; left: 0; z-index: 5; background-color: white; min-width: 80px;">
+                    <div class="flex gap-1 justify-center">
                         <button onclick="compensatoryManagement.toggleUsed('${leave.id}', ${!leave.used})" 
-                                class="px-2 py-1 rounded text-xs font-medium transition whitespace-nowrap ${
+                                class="px-3 py-1.5 rounded text-xs font-bold transition ${
                                     leave.used 
                                         ? 'bg-green-500 hover:bg-green-600 text-white' 
                                         : 'bg-gray-500 hover:bg-gray-600 text-white'
-                                }">
-                            ${leave.used ? '未使用に戻す' : '使用済にする'}
+                                }"
+                                title="${leave.used ? '未使用に戻す' : '使用済にする'}">
+                            ${leave.used ? '未' : '済'}
                         </button>
                         ${leave.used ? `
                         <button onclick="compensatoryManagement.saveUsedDate('${leave.id}')" 
-                                class="px-2 py-1 rounded text-xs font-medium transition whitespace-nowrap bg-blue-500 hover:bg-blue-600 text-white">
-                            <i class="fas fa-save"></i> 保存
+                                class="px-2 py-1.5 rounded text-xs font-medium transition bg-blue-500 hover:bg-blue-600 text-white"
+                                title="使用日を保存">
+                            <i class="fas fa-save"></i>
                         </button>
                         ` : ''}
                     </div>

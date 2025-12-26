@@ -53,6 +53,14 @@ const utils = {
     // タイムスタンプから時刻を抽出 (ISO 8601 → HH:MM)
     formatTime(timestamp) {
         if (!timestamp) return '-';
+        // タイムスタンプがYYYY-MM-DDTHH:MM:SS形式の場合、そのまま時刻部分を抽出
+        if (typeof timestamp === 'string' && timestamp.includes('T')) {
+            const timePart = timestamp.split('T')[1];
+            if (timePart) {
+                return timePart.substring(0, 5); // HH:MM部分を取得
+            }
+        }
+        // それ以外の場合は従来の処理
         const date = new Date(timestamp);
         return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
     },
@@ -60,6 +68,7 @@ const utils = {
     // 日付と時刻からタイムスタンプを作成 (YYYY-MM-DD + HH:MM → ISO 8601)
     createTimestamp(dateStr, timeStr) {
         if (!timeStr || timeStr === '-') return null;
+        // YYYY-MM-DDTHH:MM:SS形式で返す（タイムゾーン情報なし）
         return `${dateStr}T${timeStr}:00`;
     },
     

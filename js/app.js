@@ -288,6 +288,17 @@ const api = {
         });
         const result = await response.json();
         return result[0];
+    },
+    
+    // 有給休暇作成
+    async createPaidLeave(data) {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/paid_leave`, {
+            method: 'POST',
+            headers: { ...supabaseHeaders, 'Prefer': 'return=representation' },
+            body: JSON.stringify(data)
+        });
+        const result = await response.json();
+        return result[0];
     }
 };
 
@@ -302,6 +313,10 @@ const auth = {
         
         app.currentUser = employee;
         localStorage.setItem('currentUser', JSON.stringify(employee));
+        
+        // ログイン後に有給自動付与チェックを実行
+        await this.checkAndGrantPaidLeave(employee);
+        
         return { success: true, employee };
     },
     
@@ -318,6 +333,102 @@ const auth = {
             return true;
         }
         return false;
+    },
+    
+    // 有給自動付与チェック
+    async checkAndGrantPaidLeave(employee) {
+        try {
+            const today = utils.getCurrentDate();
+            
+            // 従業員の入社日から有給付与が必要かチェック
+            // 入社日がemployeeテーブルにあると仮定（ない場合は実装しない）
+            if (!employee.hire_date) {
+                return; // 入社日がない場合はスキップ
+            }
+            
+            // 入社日から6ヶ月後、1年半後、2年半後...の有給付与日を計算
+            const hireDate = new Date(employee.hire_date);
+            const todayDate = new Date(today);
+            
+            // 既存の有給データを取得
+            const existingLeaves = await api.getPaidLeaves();
+            const employeeLeaves = existingLeaves.filter(pl => pl.employee_id === employee.id);
+            
+            // 付与予定日のリストを生成
+            const grantDates = this.calculateGrantDates(hireDate, todayDate);
+            
+            let newGrantCount = 0;
+            
+            for (const grantInfo of grantDates) {
+                // 既に付与済みかチェック
+                const alreadyGranted = employeeLeaves.some(pl => 
+                    pl.grant_date === grantInfo.date
+                );
+                
+                if (!alreadyGranted && grantInfo.date <= today) {
+                    // 未付与で付与日が過去または今日の場合、自動付与
+                    await api.createPaidLeave({
+                        employee_id: employee.id,
+                        grant_date: grantInfo.date,
+                        grant_days: grantInfo.days,
+                        remaining_days: grantInfo.days,
+                        used_days: 0,
+                        expiry_date: this.calculateExpiryDate(grantInfo.date),
+                        status: 'active'
+                    });
+                    newGrantCount++;
+                }
+            }
+            
+            if (newGrantCount > 0) {
+                utils.showToast(`有給休暇 ${newGrantCount}件を自動付与しました`, 'success');
+            }
+        } catch (error) {
+            console.error('有給自動付与チェックエラー:', error);
+            // エラーが出てもログインは継続
+        }
+    },
+    
+    // 有給付与日を計算
+    calculateGrantDates(hireDate, todayDate) {
+        const grants = [];
+        const years = Math.floor((todayDate - hireDate) / (365.25 * 24 * 60 * 60 * 1000));
+        
+        // 入社6ヶ月後: 10日
+        const firstGrant = new Date(hireDate);
+        firstGrant.setMonth(firstGrant.getMonth() + 6);
+        if (firstGrant <= todayDate) {
+            grants.push({
+                date: firstGrant.toISOString().split('T')[0],
+                days: 10,
+                label: '入社6ヶ月'
+            });
+        }
+        
+        // その後は毎年付与（付与日数は勤続年数に応じて増加）
+        const yearlyDays = [10, 11, 12, 14, 16, 18, 20, 20, 20, 20]; // 0.5年, 1.5年, 2.5年...
+        
+        for (let i = 1; i <= years && i < yearlyDays.length; i++) {
+            const grantDate = new Date(hireDate);
+            grantDate.setMonth(grantDate.getMonth() + 6 + (i * 12));
+            
+            if (grantDate <= todayDate) {
+                grants.push({
+                    date: grantDate.toISOString().split('T')[0],
+                    days: yearlyDays[i],
+                    label: `勤続${i + 0.5}年`
+                });
+            }
+        }
+        
+        return grants;
+    },
+    
+    // 有効期限を計算（付与日から2年後）
+    calculateExpiryDate(grantDate) {
+        const expiry = new Date(grantDate);
+        expiry.setFullYear(expiry.getFullYear() + 2);
+        return expiry.toISOString().split('T')[0];
     }
 };
 

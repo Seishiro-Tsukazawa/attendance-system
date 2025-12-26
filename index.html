@@ -77,6 +77,42 @@
                 font-size: 1.125rem !important;
             }
         }
+        /* 日付入力フィールドのモバイル対応 */
+        input[type="date"],
+        input[type="month"] {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            position: relative;
+            background-color: white;
+            min-height: 2.5rem;
+        }
+        /* iOSでの日付ピッカー調整 */
+        @supports (-webkit-touch-callout: none) {
+            input[type="date"],
+            input[type="month"] {
+                min-height: 2.75rem;
+                font-size: 16px; /* iOSのズーム防止 */
+            }
+        }
+        /* 日付入力フィールドのアイコン表示 */
+        input[type="date"]::-webkit-calendar-picker-indicator,
+        input[type="month"]::-webkit-calendar-picker-indicator {
+            cursor: pointer;
+            opacity: 0.6;
+            padding: 0.25rem;
+        }
+        /* モバイルでのモーダル調整 */
+        @media (max-width: 640px) {
+            .fixed.inset-0 {
+                overflow-y: auto;
+            }
+            input[type="date"],
+            input[type="month"] {
+                width: 100%;
+                max-width: 100%;
+            }
+        }
     </style>
 </head>
 <body class="bg-gray-50">

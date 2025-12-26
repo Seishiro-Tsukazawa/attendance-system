@@ -170,10 +170,16 @@
                             </p>
                         </div>
                     </div>
-                    <button id="logoutBtn" class="bg-white/20 hover:bg-white/30 px-3 py-2 md:px-4 rounded-lg transition text-sm md:text-base">
-                        <i class="fas fa-sign-out-alt"></i>
-                        <span class="hidden sm:inline ml-2">ログアウト</span>
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button id="reloadBtn" class="bg-white/20 hover:bg-white/30 px-3 py-2 md:px-4 rounded-lg transition text-sm md:text-base hidden">
+                            <i class="fas fa-sync-alt"></i>
+                            <span class="hidden sm:inline ml-2">更新</span>
+                        </button>
+                        <button id="logoutBtn" class="bg-white/20 hover:bg-white/30 px-3 py-2 md:px-4 rounded-lg transition text-sm md:text-base">
+                            <i class="fas fa-sign-out-alt"></i>
+                            <span class="hidden sm:inline ml-2">ログアウト</span>
+                        </button>
+                    </div>
                 </div>
             </div>
         </header>

@@ -1964,6 +1964,22 @@ async function init() {
 document.addEventListener('DOMContentLoaded', () => {
     init();
     
+    // PWAモード検知とリロードボタン表示
+    const isPWA = window.matchMedia('(display-mode: standalone)').matches || 
+                  window.navigator.standalone === true;
+    
+    if (isPWA) {
+        const reloadBtn = document.getElementById('reloadBtn');
+        if (reloadBtn) {
+            reloadBtn.classList.remove('hidden');
+        }
+    }
+    
+    // リロードボタン
+    document.getElementById('reloadBtn')?.addEventListener('click', () => {
+        location.reload();
+    });
+    
     // ログインフォーム
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
         e.preventDefault();

@@ -1180,14 +1180,50 @@ const compensatoryManagement = {
             );
         }
         
+        // 管理者の場合、従業員フィルターを表示
+        if (app.currentUser.role === 'admin') {
+            this.renderEmployeeFilter();
+        }
+        
         this.renderTable();
     },
     
-    renderTable() {
+    renderEmployeeFilter() {
+        const filterSelect = document.getElementById('compensatoryEmployeeFilter');
+        const activeEmployees = app.allEmployees.filter(e => e.status === 'active');
+        
+        const options = activeEmployees.map(emp => 
+            `<option value="${emp.id}">${emp.name}</option>`
+        ).join('');
+        
+        filterSelect.innerHTML = '<option value="">全員</option>' + options;
+    },
+    
+    filterCompensatory() {
+        const selectedEmployeeId = document.getElementById('compensatoryEmployeeFilter').value;
+        
+        if (!selectedEmployeeId) {
+            // 全員表示
+            this.renderTable();
+        } else {
+            // 特定の従業員のみ表示
+            this.renderTable(selectedEmployeeId);
+        }
+    },
+    
+    renderTable(filterEmployeeId = null) {
         const tbody = document.getElementById('compensatoryTableBody');
         const noDataMsg = document.getElementById('noCompensatoryMessage');
         
-        if (app.compensatoryLeaves.length === 0) {
+        // フィルタリング
+        let leavesToDisplay = app.compensatoryLeaves;
+        if (filterEmployeeId) {
+            leavesToDisplay = app.compensatoryLeaves.filter(
+                leave => leave.employee_id === filterEmployeeId
+            );
+        }
+        
+        if (leavesToDisplay.length === 0) {
             tbody.innerHTML = '';
             noDataMsg.classList.remove('hidden');
             return;
@@ -1195,7 +1231,7 @@ const compensatoryManagement = {
         
         noDataMsg.classList.add('hidden');
         
-        const html = app.compensatoryLeaves.map(leave => {
+        const html = leavesToDisplay.map(leave => {
             const employee = app.allEmployees.find(e => e.id === leave.employee_id);
             const employeeName = employee ? employee.name : '不明';
             
@@ -1357,6 +1393,34 @@ const compensatoryManagement = {
 
 // CSV出力
 const exportData = {
+    loadEmployeeCheckboxes() {
+        const container = document.getElementById('employeeCheckboxList');
+        const activeEmployees = app.allEmployees.filter(e => e.status === 'active');
+        
+        const html = activeEmployees.map(emp => `
+            <label class="flex items-center cursor-pointer hover:bg-gray-50 p-2 rounded">
+                <input type="checkbox" class="employee-checkbox w-4 h-4 text-tsunagu-blue border-gray-300 rounded focus:ring-tsunagu-blue mr-2" 
+                       value="${emp.id}" checked>
+                <span class="text-sm md:text-base">${emp.name}</span>
+            </label>
+        `).join('');
+        
+        container.innerHTML = html;
+        
+        // 全員選択チェックボックスのイベント
+        document.getElementById('selectAllEmployees').addEventListener('change', (e) => {
+            const checkboxes = document.querySelectorAll('.employee-checkbox');
+            checkboxes.forEach(cb => cb.checked = e.target.checked);
+        });
+        
+        // 個別チェックボックスの変更で全員選択の状態を更新
+        container.addEventListener('change', () => {
+            const checkboxes = document.querySelectorAll('.employee-checkbox');
+            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            document.getElementById('selectAllEmployees').checked = allChecked;
+        });
+    },
+    
     async exportCSV() {
         const startDate = document.getElementById('exportStartDate').value;
         const endDate = document.getElementById('exportEndDate').value;
@@ -1366,13 +1430,24 @@ const exportData = {
             return;
         }
         
+        // 選択された従業員IDを取得
+        const selectedEmployeeIds = Array.from(document.querySelectorAll('.employee-checkbox:checked'))
+            .map(cb => cb.value);
+        
+        if (selectedEmployeeIds.length === 0) {
+            utils.showToast('従業員を1人以上選択してください', 'error');
+            return;
+        }
+        
         const data = await api.getAttendance();
         const filtered = data.filter(att => {
-            return att.date >= startDate && att.date <= endDate;
+            return att.date >= startDate && 
+                   att.date <= endDate && 
+                   selectedEmployeeIds.includes(att.employee_id.toString());
         });
         
         if (filtered.length === 0) {
-            utils.showToast('指定期間のデータがありません', 'info');
+            utils.showToast('指定条件のデータがありません', 'info');
             return;
         }
         
@@ -1825,6 +1900,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const firstDay = today.substring(0, 8) + '01';
                 document.getElementById('exportStartDate').value = firstDay;
                 document.getElementById('exportEndDate').value = today;
+                
+                // 従業員チェックボックスを読み込み
+                if (app.allEmployees.length === 0) {
+                    app.allEmployees = await api.getEmployees();
+                }
+                exportData.loadEmployeeCheckboxes();
             }
         });
     });
@@ -1840,6 +1921,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 勤怠フィルター
     document.getElementById('filterBtn').addEventListener('click', () => attendance.filterByMonth());
+    
+    // 振替休暇フィルター
+    document.getElementById('compensatoryFilterBtn').addEventListener('click', () => compensatoryManagement.filterCompensatory());
     
     // CSV出力
     document.getElementById('exportCsvBtn').addEventListener('click', () => exportData.exportCSV());

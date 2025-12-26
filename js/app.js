@@ -16,7 +16,9 @@ const app = {
     allEmployees: [],
     allAttendance: [],
     filteredAttendance: [],
-    compensatoryLeaves: []
+    compensatoryLeaves: [],
+    paidLeaves: [],
+    leaveRequests: []
 };
 
 // ユーティリティ関数
@@ -231,6 +233,55 @@ const api = {
     // 振替休暇更新
     async updateCompensatoryLeave(id, data) {
         const response = await fetch(`${SUPABASE_URL}/rest/v1/compensatory_leave?id=eq.${id}`, {
+            method: 'PATCH',
+            headers: { ...supabaseHeaders, 'Prefer': 'return=representation' },
+            body: JSON.stringify(data)
+        });
+        const result = await response.json();
+        return result[0];
+    },
+    
+    // 有給休暇取得
+    async getPaidLeaves() {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/paid_leave?order=grant_date.desc`, {
+            headers: supabaseHeaders
+        });
+        return await response.json();
+    },
+    
+    // 有給申請取得
+    async getLeaveRequests() {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/leave_requests?order=request_date.desc`, {
+            headers: supabaseHeaders
+        });
+        return await response.json();
+    },
+    
+    // 有給申請作成
+    async createLeaveRequest(data) {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/leave_requests`, {
+            method: 'POST',
+            headers: { ...supabaseHeaders, 'Prefer': 'return=representation' },
+            body: JSON.stringify(data)
+        });
+        const result = await response.json();
+        return result[0];
+    },
+    
+    // 有給申請更新（承認/却下）
+    async updateLeaveRequest(id, data) {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/leave_requests?id=eq.${id}`, {
+            method: 'PATCH',
+            headers: { ...supabaseHeaders, 'Prefer': 'return=representation' },
+            body: JSON.stringify(data)
+        });
+        const result = await response.json();
+        return result[0];
+    },
+    
+    // 有給休暇残日数更新
+    async updatePaidLeave(id, data) {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/paid_leave?id=eq.${id}`, {
             method: 'PATCH',
             headers: { ...supabaseHeaders, 'Prefer': 'return=representation' },
             body: JSON.stringify(data)
@@ -497,7 +548,10 @@ const attendance = {
         app.allAttendance = await api.getAttendance();
         app.compensatoryLeaves = await api.getCompensatoryLeaves();
         
-        // 管理者の場合は従業員フィルターを表示＆従業員リストを生成
+        // 新規追加ボタンを表示（全ユーザー）
+        document.getElementById('addAttendanceBtn').classList.remove('hidden');
+        
+        // 管理者の場合は従業員フィルターも表示＆従業員リストを生成
         if (app.currentUser.role === 'admin') {
             document.getElementById('employeeFilter').classList.remove('hidden');
             this.populateEmployeeFilter();
@@ -773,6 +827,130 @@ const attendance = {
         } catch (error) {
             console.error('勤怠更新エラー:', error);
             utils.showToast('更新に失敗しました', 'error');
+        }
+    },
+    
+    // 新規追加モーダルを表示
+    showAddModal() {
+        // 従業員セレクトボックスを生成
+        const selectElement = document.getElementById('addEmployeeId');
+        
+        if (app.currentUser.role === 'admin') {
+            // 管理者：全従業員を選択可能
+            const options = app.allEmployees.map(emp => 
+                `<option value="${emp.id}">${emp.name}</option>`
+            ).join('');
+            selectElement.innerHTML = '<option value="">選択してください</option>' + options;
+            selectElement.disabled = false;
+        } else {
+            // 一般ユーザー：自分のみ選択（固定）
+            selectElement.innerHTML = `<option value="${app.currentUser.id}">${app.currentUser.name}</option>`;
+            selectElement.disabled = true;
+        }
+        
+        // フォームをリセット
+        document.getElementById('addAttendanceForm').reset();
+        
+        // デフォルト値を設定
+        document.getElementById('addDate').value = utils.getCurrentDate();
+        
+        // 一般ユーザーの場合は自分のIDを自動選択
+        if (app.currentUser.role !== 'admin') {
+            selectElement.value = app.currentUser.id;
+        }
+        
+        // モーダルを表示
+        document.getElementById('addAttendanceModal').classList.remove('hidden');
+    },
+    
+    // 新規追加モーダルを非表示
+    hideAddModal() {
+        document.getElementById('addAttendanceModal').classList.add('hidden');
+    },
+    
+    // 新規勤怠データを保存
+    async saveNewAttendance(event) {
+        event.preventDefault();
+        
+        const date = document.getElementById('addDate').value;
+        const employeeId = document.getElementById('addEmployeeId').value;
+        const shiftType = document.getElementById('addShiftType').value;
+        const clockInTime = document.getElementById('addClockIn').value;
+        const clockOutTime = document.getElementById('addClockOut').value;
+        const note = document.getElementById('addNote').value;
+        
+        if (!employeeId) {
+            utils.showToast('従業員を選択してください', 'error');
+            return;
+        }
+        
+        // HH:MM形式をタイムスタンプに変換
+        const clockInTimestamp = utils.createTimestamp(date, clockInTime);
+        const clockOutTimestamp = utils.createTimestamp(date, clockOutTime);
+        
+        // タイムスタンプから勤務時間を計算
+        let workHours = 0;
+        let breakMinutes = 0;
+        let overtimeHours = 0;
+        
+        if (clockInTimestamp && clockOutTimestamp) {
+            const clockInDate = new Date(clockInTimestamp);
+            const clockOutDate = new Date(clockOutTimestamp);
+            const diffMinutes = (clockOutDate - clockInDate) / 1000 / 60;
+            const diffHours = diffMinutes / 60;
+            
+            // 休憩時間を自動控除
+            if (diffHours >= 8) {
+                breakMinutes = 60;
+            } else if (diffHours >= 6) {
+                breakMinutes = 45;
+            }
+            
+            const actualWorkMinutes = diffMinutes - breakMinutes;
+            workHours = Math.round((actualWorkMinutes / 60) * 10) / 10;
+            
+            // 残業時間を計算（8時間を超えた分）
+            overtimeHours = workHours > 8 ? Math.round((workHours - 8) * 10) / 10 : 0;
+        }
+        
+        const data = {
+            employee_id: employeeId,
+            date: date,
+            shift_type: shiftType,
+            clock_in: clockInTimestamp,
+            clock_out: clockOutTimestamp,
+            break_minutes: breakMinutes,
+            work_hours: workHours,
+            overtime_hours: overtimeHours,
+            note: note,
+            status: 'completed'
+        };
+        
+        try {
+            // 勤怠データを追加
+            await api.createAttendance(data);
+            
+            // 休日出勤の場合、振替休暇を自動計算して追加
+            if (shiftType === '休日出勤' && workHours > 0) {
+                const compensatory = utils.calculateCompensatory(workHours);
+                const compensatoryData = {
+                    employee_id: employeeId,
+                    work_date: date,
+                    work_hours: workHours,
+                    substitute_days: compensatory.days,
+                    substitute_hours: compensatory.hours,
+                    used: false,
+                    used_date: null
+                };
+                await api.createCompensatoryLeave(compensatoryData);
+            }
+            
+            utils.showToast('勤怠データを追加しました', 'success');
+            this.hideAddModal();
+            await this.loadAttendance();
+        } catch (error) {
+            console.error('勤怠追加エラー:', error);
+            utils.showToast('追加に失敗しました', 'error');
         }
     }
 };
@@ -1356,6 +1534,220 @@ const employees = {
     }
 };
 
+// 有給休暇管理
+const paidLeave = {
+    async loadPaidLeave() {
+        app.allEmployees = await api.getEmployees();
+        const paidLeaves = await api.getPaidLeaves();
+        const leaveRequests = await api.getLeaveRequests();
+        
+        // 一般ユーザーの場合は自分のデータのみにフィルタリング
+        if (app.currentUser.role !== 'admin') {
+            app.paidLeaves = paidLeaves.filter(pl => pl.employee_id === app.currentUser.id);
+            app.leaveRequests = leaveRequests.filter(lr => lr.employee_id === app.currentUser.id);
+        } else {
+            app.paidLeaves = paidLeaves;
+            app.leaveRequests = leaveRequests;
+        }
+        
+        this.updateSummary();
+        this.renderRequests();
+    },
+    
+    updateSummary() {
+        // 自分の有給データを集計
+        const myLeaves = app.paidLeaves.filter(pl => 
+            pl.employee_id === app.currentUser.id && pl.status === 'active'
+        );
+        
+        let totalRemaining = 0;
+        let totalGranted = 0;
+        let totalUsed = 0;
+        
+        myLeaves.forEach(pl => {
+            totalRemaining += pl.remaining_days || 0;
+            totalGranted += pl.grant_days || 0;
+            totalUsed += pl.used_days || 0;
+        });
+        
+        document.getElementById('paidLeaveRemaining').textContent = `${totalRemaining}日`;
+        document.getElementById('paidLeaveGranted').textContent = `${totalGranted}日`;
+        document.getElementById('paidLeaveUsed').textContent = `${totalUsed}日`;
+    },
+    
+    renderRequests() {
+        const tbody = document.getElementById('leaveRequestTableBody');
+        const noDataMsg = document.getElementById('noLeaveRequestMessage');
+        const statusFilter = document.getElementById('leaveStatusFilter').value;
+        
+        // ステータスでフィルタリング
+        let filteredRequests = app.leaveRequests;
+        if (statusFilter) {
+            filteredRequests = filteredRequests.filter(lr => lr.status === statusFilter);
+        }
+        
+        if (filteredRequests.length === 0) {
+            tbody.innerHTML = '';
+            noDataMsg.classList.remove('hidden');
+            return;
+        }
+        
+        noDataMsg.classList.add('hidden');
+        
+        // 管理者の場合は氏名列を追加
+        const isAdmin = app.currentUser.role === 'admin';
+        if (isAdmin) {
+            document.getElementById('leaveRequestActionHeader').textContent = '申請者 / 操作';
+        }
+        
+        const html = filteredRequests.map(request => {
+            const employee = app.allEmployees.find(e => e.id === request.employee_id);
+            const employeeName = employee ? employee.name : '不明';
+            
+            const statusBadge = {
+                'pending': '<span class="px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">承認待ち</span>',
+                'approved': '<span class="px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">承認済み</span>',
+                'rejected': '<span class="px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800">却下</span>'
+            }[request.status] || '-';
+            
+            const actionButtons = isAdmin && request.status === 'pending' 
+                ? `
+                    <div class="text-sm text-gray-600 mb-2">${employeeName}</div>
+                    <div class="flex gap-1">
+                        <button onclick="paidLeave.approveRequest('${request.id}')" class="px-2 py-1 rounded text-xs font-medium bg-green-500 hover:bg-green-600 text-white whitespace-nowrap">
+                            <i class="fas fa-check"></i> 承認
+                        </button>
+                        <button onclick="paidLeave.rejectRequest('${request.id}')" class="px-2 py-1 rounded text-xs font-medium bg-red-500 hover:bg-red-600 text-white whitespace-nowrap">
+                            <i class="fas fa-times"></i> 却下
+                        </button>
+                    </div>
+                `
+                : isAdmin 
+                    ? `<div class="text-sm text-gray-600">${employeeName}</div>`
+                    : '-';
+            
+            return `
+            <tr class="hover:bg-gray-50">
+                <td class="px-3 py-3 text-xs whitespace-nowrap">${utils.formatDate(request.request_date)}</td>
+                <td class="px-3 py-3 text-xs whitespace-nowrap">${utils.formatDate(request.leave_date)}</td>
+                <td class="px-3 py-3 text-xs whitespace-nowrap">${request.leave_type}</td>
+                <td class="px-3 py-3 text-xs font-bold whitespace-nowrap">${request.leave_days}日</td>
+                <td class="px-3 py-3 text-xs text-gray-600">${request.reason || '-'}</td>
+                <td class="px-3 py-3 text-xs whitespace-nowrap">${statusBadge}</td>
+                <td class="px-3 py-3 text-xs">${actionButtons}</td>
+            </tr>
+        `}).join('');
+        
+        tbody.innerHTML = html;
+    },
+    
+    async submitRequest(event) {
+        event.preventDefault();
+        
+        const leaveType = document.getElementById('leaveType').value;
+        const leaveDate = document.getElementById('leaveDate').value;
+        const reason = document.getElementById('leaveReason').value;
+        
+        // 休暇日数を計算
+        const leaveDays = leaveType === '全日' ? 1.0 : 0.5;
+        
+        // 残日数チェック
+        const myLeaves = app.paidLeaves.filter(pl => 
+            pl.employee_id === app.currentUser.id && pl.status === 'active'
+        );
+        const totalRemaining = myLeaves.reduce((sum, pl) => sum + (pl.remaining_days || 0), 0);
+        
+        if (totalRemaining < leaveDays) {
+            utils.showToast('有給休暇の残日数が不足しています', 'error');
+            return;
+        }
+        
+        const data = {
+            employee_id: app.currentUser.id,
+            leave_type: leaveType,
+            request_date: utils.getCurrentDate(),
+            leave_date: leaveDate,
+            leave_days: leaveDays,
+            reason: reason,
+            status: 'pending'
+        };
+        
+        try {
+            await api.createLeaveRequest(data);
+            utils.showToast('有給申請を送信しました', 'success');
+            document.getElementById('leaveRequestForm').reset();
+            await this.loadPaidLeave();
+        } catch (error) {
+            console.error('有給申請エラー:', error);
+            utils.showToast('申請に失敗しました', 'error');
+        }
+    },
+    
+    async approveRequest(requestId) {
+        if (!confirm('この申請を承認しますか？')) return;
+        
+        try {
+            const request = app.leaveRequests.find(lr => lr.id === requestId);
+            if (!request) return;
+            
+            // 申請を承認
+            await api.updateLeaveRequest(requestId, {
+                status: 'approved',
+                approver_id: app.currentUser.id,
+                approved_at: new Date().toISOString()
+            });
+            
+            // 有給残日数を減らす（古い付与から順に消化）
+            const employeeLeaves = app.paidLeaves
+                .filter(pl => pl.employee_id === request.employee_id && pl.status === 'active' && pl.remaining_days > 0)
+                .sort((a, b) => a.grant_date.localeCompare(b.grant_date));
+            
+            let remainingToDeduct = request.leave_days;
+            
+            for (const leave of employeeLeaves) {
+                if (remainingToDeduct <= 0) break;
+                
+                const deductAmount = Math.min(leave.remaining_days, remainingToDeduct);
+                const newRemaining = leave.remaining_days - deductAmount;
+                const newUsed = leave.used_days + deductAmount;
+                
+                await api.updatePaidLeave(leave.id, {
+                    remaining_days: newRemaining,
+                    used_days: newUsed
+                });
+                
+                remainingToDeduct -= deductAmount;
+            }
+            
+            utils.showToast('申請を承認しました', 'success');
+            await this.loadPaidLeave();
+        } catch (error) {
+            console.error('承認エラー:', error);
+            utils.showToast('承認に失敗しました', 'error');
+        }
+    },
+    
+    async rejectRequest(requestId) {
+        const reason = prompt('却下理由を入力してください（任意）');
+        if (reason === null) return; // キャンセル
+        
+        try {
+            await api.updateLeaveRequest(requestId, {
+                status: 'rejected',
+                approver_id: app.currentUser.id,
+                approved_at: new Date().toISOString(),
+                rejection_reason: reason || '理由なし'
+            });
+            
+            utils.showToast('申請を却下しました', 'success');
+            await this.loadPaidLeave();
+        } catch (error) {
+            console.error('却下エラー:', error);
+            utils.showToast('却下に失敗しました', 'error');
+        }
+    }
+};
+
 // 初期化
 async function init() {
     // 認証チェック
@@ -1423,6 +1815,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 await attendance.loadAttendance();
             } else if (view === 'compensatory') {
                 await compensatoryManagement.loadCompensatory();
+            } else if (view === 'paidleave') {
+                await paidLeave.loadPaidLeave();
             } else if (view === 'employees') {
                 await employees.loadEmployees();
             } else if (view === 'export') {
@@ -1461,9 +1855,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('attendanceEditForm').addEventListener('submit', (e) => attendance.saveAttendance(e));
     
+    // 勤怠新規追加
+    document.getElementById('addAttendanceBtn').addEventListener('click', () => attendance.showAddModal());
+    document.getElementById('cancelAddAttendanceBtn').addEventListener('click', () => attendance.hideAddModal());
+    document.getElementById('addAttendanceForm').addEventListener('submit', (e) => attendance.saveNewAttendance(e));
+    
     // 振替使用日選択モーダル
     document.getElementById('cancelUsedDateBtn').addEventListener('click', () => compensatoryManagement.hideUsedDateModal());
     document.getElementById('usedDateForm').addEventListener('submit', (e) => compensatoryManagement.submitUsedDate(e));
+    
+    // 有給申請
+    document.getElementById('leaveRequestForm').addEventListener('submit', (e) => paidLeave.submitRequest(e));
+    document.getElementById('leaveStatusFilter').addEventListener('change', () => paidLeave.renderRequests());
     
     // 月フィルターのデフォルト値
     const currentMonth = new Date().toISOString().substring(0, 7);

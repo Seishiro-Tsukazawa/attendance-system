@@ -79,7 +79,8 @@
         }
         /* 日付入力フィールドのモバイル対応 */
         input[type="date"],
-        input[type="month"] {
+        input[type="month"],
+        input[type="time"] {
             -webkit-appearance: none;
             -moz-appearance: none;
             appearance: none;
@@ -87,17 +88,19 @@
             background-color: white;
             min-height: 2.5rem;
         }
-        /* iOSでの日付ピッカー調整 */
+        /* iOSでの日付・時刻ピッカー調整 */
         @supports (-webkit-touch-callout: none) {
             input[type="date"],
-            input[type="month"] {
+            input[type="month"],
+            input[type="time"] {
                 min-height: 2.75rem;
                 font-size: 16px; /* iOSのズーム防止 */
             }
         }
-        /* 日付入力フィールドのアイコン表示 */
+        /* 日付・時刻入力フィールドのアイコン表示 */
         input[type="date"]::-webkit-calendar-picker-indicator,
-        input[type="month"]::-webkit-calendar-picker-indicator {
+        input[type="month"]::-webkit-calendar-picker-indicator,
+        input[type="time"]::-webkit-calendar-picker-indicator {
             cursor: pointer;
             opacity: 0.6;
             padding: 0.25rem;
@@ -108,7 +111,8 @@
                 overflow-y: auto;
             }
             input[type="date"],
-            input[type="month"] {
+            input[type="month"],
+            input[type="time"] {
                 width: 100%;
                 max-width: 100%;
             }

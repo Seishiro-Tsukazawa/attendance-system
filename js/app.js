@@ -1973,6 +1973,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (reloadBtn) {
             reloadBtn.classList.remove('hidden');
         }
+        
+        // プルトゥリフレッシュ機能を有効化
+        initPullToRefresh();
     }
     
     // リロードボタン
@@ -2083,3 +2086,84 @@ document.addEventListener('DOMContentLoaded', () => {
     const currentMonth = new Date().toISOString().substring(0, 7);
     document.getElementById('monthFilter').value = currentMonth;
 });
+
+// プルトゥリフレッシュ機能
+function initPullToRefresh() {
+    const pullToRefresh = document.getElementById('pullToRefresh');
+    const refreshIcon = document.getElementById('refreshIcon');
+    const refreshText = document.getElementById('refreshText');
+    
+    let startY = 0;
+    let currentY = 0;
+    let isDragging = false;
+    let isRefreshing = false;
+    const threshold = 80; // 引っ張る距離の閾値（ピクセル）
+    
+    // タッチ開始
+    document.addEventListener('touchstart', (e) => {
+        // ページが一番上にいる時のみ有効
+        if (window.scrollY === 0 && !isRefreshing) {
+            startY = e.touches[0].clientY;
+            isDragging = true;
+        }
+    }, { passive: true });
+    
+    // タッチ移動
+    document.addEventListener('touchmove', (e) => {
+        if (!isDragging || isRefreshing) return;
+        
+        currentY = e.touches[0].clientY;
+        const pullDistance = currentY - startY;
+        
+        // 下方向にのみ反応
+        if (pullDistance > 0) {
+            // 引っ張り距離に応じてインジケーターの高さを変更
+            const displayDistance = Math.min(pullDistance, threshold * 1.5);
+            const opacity = Math.min(displayDistance / threshold, 1);
+            
+            pullToRefresh.style.height = `${displayDistance}px`;
+            pullToRefresh.style.opacity = opacity;
+            
+            // 閾値を超えたらテキストを変更
+            if (pullDistance >= threshold) {
+                refreshText.textContent = '離して更新';
+                refreshIcon.style.transform = 'rotate(180deg)';
+            } else {
+                refreshText.textContent = '下にスワイプして更新';
+                refreshIcon.style.transform = 'rotate(0deg)';
+            }
+        }
+    }, { passive: true });
+    
+    // タッチ終了
+    document.addEventListener('touchend', async () => {
+        if (!isDragging || isRefreshing) return;
+        
+        const pullDistance = currentY - startY;
+        
+        // 閾値を超えていたらリロード
+        if (pullDistance >= threshold) {
+            isRefreshing = true;
+            
+            // リフレッシュアニメーション開始
+            pullToRefresh.style.height = '60px';
+            pullToRefresh.style.opacity = '1';
+            refreshIcon.classList.add('refreshing');
+            refreshText.textContent = '更新中...';
+            
+            // 少し待ってからリロード（ユーザーに視覚的フィードバック）
+            setTimeout(() => {
+                location.reload();
+            }, 500);
+        } else {
+            // 閾値未満なら元に戻す
+            pullToRefresh.style.height = '0';
+            pullToRefresh.style.opacity = '0';
+            refreshIcon.style.transform = 'rotate(0deg)';
+        }
+        
+        isDragging = false;
+        startY = 0;
+        currentY = 0;
+    });
+}

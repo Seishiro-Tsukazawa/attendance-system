@@ -113,9 +113,28 @@
                 max-width: 100%;
             }
         }
+        /* プルトゥリフレッシュアニメーション */
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .refreshing {
+            animation: spin 1s linear infinite;
+        }
+        #pullToRefresh {
+            transition: height 0.3s ease, opacity 0.3s ease;
+        }
     </style>
 </head>
 <body class="bg-gray-50">
+    <!-- プルトゥリフレッシュインジケーター -->
+    <div id="pullToRefresh" class="fixed top-0 left-0 right-0 flex justify-center items-center bg-gradient-to-b from-tsunagu-blue to-transparent text-white pointer-events-none transition-all duration-300 z-50" style="height: 0; opacity: 0;">
+        <div class="flex flex-col items-center py-4">
+            <i class="fas fa-sync-alt text-2xl mb-2" id="refreshIcon"></i>
+            <span class="text-sm font-medium" id="refreshText">下にスワイプして更新</span>
+        </div>
+    </div>
+    
     <!-- ログイン画面 -->
     <div id="loginScreen" class="min-h-screen gradient-bg flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl p-6 md:p-8 w-full max-w-md">

@@ -663,9 +663,13 @@ const attendance = {
         document.getElementById('addAttendanceBtn').classList.remove('hidden');
         
         // 管理者の場合は従業員フィルターも表示＆従業員リストを生成
+        const nameHeader = document.getElementById('attendanceNameHeader');
         if (app.currentUser.role === 'admin') {
             document.getElementById('employeeFilter').classList.remove('hidden');
+            if (nameHeader) nameHeader.style.display = '';
             this.populateEmployeeFilter();
+        } else {
+            if (nameHeader) nameHeader.style.display = 'none';
         }
         
         // デフォルトで当月のデータを表示
@@ -709,13 +713,23 @@ const attendance = {
             // 日付を短縮表示（モバイル対応）
             const shortDate = att.date.split('-').slice(1).join('/'); // MM/DD形式
             
+            // 名前列は管理者のみ表示
+            const nameColumn = app.currentUser.role === 'admin' 
+                ? `<td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium">${employeeName}</td>`
+                : '';
+            
             return `
             <tr class="hover:bg-gray-50">
+                <td class="px-2 md:px-4 py-2 md:py-3 text-sm sticky-col-left" style="position: sticky; left: 0; z-index: 5; background-color: white;">
+                    <button onclick="attendance.editAttendance('${att.id}')" class="text-blue-600 hover:text-blue-800 p-1">
+                        <i class="fas fa-edit text-sm md:text-base"></i>
+                    </button>
+                </td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm">
                     <span class="hidden md:inline">${utils.formatDate(att.date)}</span>
                     <span class="md:hidden">${shortDate}</span>
                 </td>
-                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium">${employeeName}</td>
+                ${nameColumn}
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm">
                     <span class="px-1.5 md:px-2 py-0.5 md:py-1 rounded text-xs font-medium ${
                         att.shift_type === '早番' ? 'bg-yellow-100 text-yellow-800' : 
@@ -732,11 +746,6 @@ const attendance = {
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-bold ${att.overtime_hours > 0 ? 'text-orange-600' : 'text-gray-400'}">${att.overtime_hours || 0}時間</td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium text-red-600">${compensatoryInfo}</td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-gray-600">${att.note || '-'}</td>
-                <td class="px-2 md:px-4 py-2 md:py-3 text-sm">
-                    <button onclick="attendance.editAttendance('${att.id}')" class="text-blue-600 hover:text-blue-800 p-1">
-                        <i class="fas fa-edit text-sm md:text-base"></i>
-                    </button>
-                </td>
             </tr>
         `}).join('');
         
@@ -1292,8 +1301,16 @@ const compensatoryManagement = {
         }
         
         // 管理者の場合、従業員フィルターを表示
+        const filterContainer = document.getElementById('compensatoryFilterContainer');
+        const nameHeader = document.getElementById('compensatoryNameHeader');
+        
         if (app.currentUser.role === 'admin') {
+            if (filterContainer) filterContainer.classList.remove('hidden');
+            if (nameHeader) nameHeader.style.display = '';
             this.renderEmployeeFilter();
+        } else {
+            if (filterContainer) filterContainer.classList.add('hidden');
+            if (nameHeader) nameHeader.style.display = 'none';
         }
         
         this.renderTable();
@@ -1367,9 +1384,34 @@ const compensatoryManagement = {
                 ? '<span class="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">使用済</span>'
                 : '<span class="px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">未使用</span>';
             
+            // 名前列は管理者のみ表示
+            const nameColumn = app.currentUser.role === 'admin' 
+                ? `<td class="px-3 py-3 text-xs font-medium whitespace-nowrap">${employeeName}</td>`
+                : '';
+            
             return `
             <tr class="hover:bg-gray-50">
-                <td class="px-3 py-3 text-xs font-medium whitespace-nowrap">${employeeName}</td>
+                <td class="px-3 py-3 text-xs sticky-col-left" style="position: sticky; left: 0; z-index: 5; background-color: white; min-width: 80px;">
+                    <div class="flex gap-1 justify-center">
+                        <button onclick="compensatoryManagement.toggleUsed('${leave.id}', ${!leave.used})" 
+                                class="px-3 py-1.5 rounded text-xs font-bold transition ${
+                                    leave.used 
+                                        ? 'bg-green-500 hover:bg-green-600 text-white' 
+                                        : 'bg-gray-500 hover:bg-gray-600 text-white'
+                                }"
+                                title="${leave.used ? '未使用に戻す' : '使用済にする'}">
+                            ${leave.used ? '未' : '済'}
+                        </button>
+                        ${leave.used ? `
+                        <button onclick="compensatoryManagement.saveUsedDate('${leave.id}')" 
+                                class="px-2 py-1.5 rounded text-xs font-medium transition bg-blue-500 hover:bg-blue-600 text-white"
+                                title="使用日を保存">
+                            <i class="fas fa-save"></i>
+                        </button>
+                        ` : ''}
+                    </div>
+                </td>
+                ${nameColumn}
                 <td class="px-3 py-3 text-xs whitespace-nowrap">${utils.formatDate(leave.work_date)}</td>
                 <td class="px-3 py-3 text-xs text-green-600 font-medium whitespace-nowrap">${clockIn}</td>
                 <td class="px-3 py-3 text-xs text-red-600 font-medium whitespace-nowrap">${clockOut}</td>
@@ -1383,24 +1425,6 @@ const compensatoryManagement = {
                            ${!leave.used ? 'disabled' : ''}>
                 </td>
                 <td class="px-3 py-3 text-xs whitespace-nowrap">${statusBadge}</td>
-                <td class="px-3 py-3 text-xs">
-                    <div class="flex gap-1">
-                        <button onclick="compensatoryManagement.toggleUsed('${leave.id}', ${!leave.used})" 
-                                class="px-2 py-1 rounded text-xs font-medium transition whitespace-nowrap ${
-                                    leave.used 
-                                        ? 'bg-green-500 hover:bg-green-600 text-white' 
-                                        : 'bg-gray-500 hover:bg-gray-600 text-white'
-                                }">
-                            ${leave.used ? '未使用に戻す' : '使用済にする'}
-                        </button>
-                        ${leave.used ? `
-                        <button onclick="compensatoryManagement.saveUsedDate('${leave.id}')" 
-                                class="px-2 py-1 rounded text-xs font-medium transition whitespace-nowrap bg-blue-500 hover:bg-blue-600 text-white">
-                            <i class="fas fa-save"></i> 保存
-                        </button>
-                        ` : ''}
-                    </div>
-                </td>
             </tr>
         `}).join('');
         

@@ -296,6 +296,13 @@
                             <div class="text-xl md:text-2xl font-bold">退勤</div>
                         </button>
                     </div>
+                    
+                    <!-- リセットボタン -->
+                    <div id="resetBtnContainer" class="mt-4 hidden">
+                        <button id="resetClockBtn" class="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-lg shadow p-3 transition text-sm md:text-base">
+                            <i class="fas fa-undo mr-2"></i>本日の打刻をリセット
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -560,17 +567,18 @@
                             </select>
                         </div>
                         
-                        <div class="overflow-x-auto">
+                        <div class="overflow-x-auto" style="position: relative;">
                             <table class="w-full" style="min-width: 800px;">
                                 <thead class="bg-gray-100">
                                     <tr>
+                                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 whitespace-nowrap sticky-col-left" style="position: sticky; left: 0; z-index: 10; background-color: rgb(243, 244, 246);" id="leaveRequestNameHeader">申請者</th>
+                                        <th class="px-3 py-3 text-center text-xs font-medium text-gray-700 whitespace-nowrap sticky-col-left" style="width: 60px; position: sticky; left: 100px; z-index: 10; background-color: rgb(243, 244, 246);" id="leaveRequestActionHeader">操作</th>
                                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 whitespace-nowrap">申請日</th>
                                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 whitespace-nowrap">休暇日</th>
                                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 whitespace-nowrap">タイプ</th>
                                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 whitespace-nowrap">使用日数</th>
                                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 whitespace-nowrap">理由</th>
                                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 whitespace-nowrap">状態</th>
-                                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 whitespace-nowrap" id="leaveRequestActionHeader">操作</th>
                                     </tr>
                                 </thead>
                                 <tbody id="leaveRequestTableBody" class="divide-y divide-gray-200">

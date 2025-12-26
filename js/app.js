@@ -211,6 +211,14 @@ const api = {
         return result[0];
     },
     
+    // 勤怠記録削除
+    async deleteAttendance(id) {
+        await fetch(`${SUPABASE_URL}/rest/v1/attendance?id=eq.${id}`, {
+            method: 'DELETE',
+            headers: supabaseHeaders
+        });
+    },
+    
     // 振替休暇取得
     async getCompensatoryLeaves() {
         const response = await fetch(`${SUPABASE_URL}/rest/v1/compensatory_leave?select=*&order=work_date.desc`, {
@@ -277,6 +285,14 @@ const api = {
         });
         const result = await response.json();
         return result[0];
+    },
+    
+    // 有給申請削除
+    async deleteLeaveRequest(id) {
+        await fetch(`${SUPABASE_URL}/rest/v1/leave_requests?id=eq.${id}`, {
+            method: 'DELETE',
+            headers: supabaseHeaders
+        });
     },
     
     // 有給休暇残日数更新
@@ -614,6 +630,7 @@ const clock = {
     updateButtons() {
         const clockInBtn = document.getElementById('clockInBtn');
         const clockOutBtn = document.getElementById('clockOutBtn');
+        const resetBtnContainer = document.getElementById('resetBtnContainer');
         
         console.log('=== updateButtons実行 ===');
         console.log('app.todayAttendance:', app.todayAttendance);
@@ -621,20 +638,23 @@ const clock = {
         console.log('clock_outの型:', typeof app.todayAttendance?.clock_out);
         
         if (!app.todayAttendance || !app.todayAttendance.id) {
-            // 出勤データなし → 出勤ボタンのみ有効
+            // 出勤データなし → 出勤ボタンのみ有効、リセットボタン非表示
             console.log('パターン1: 出勤データなし');
             clockInBtn.disabled = false;
             clockOutBtn.disabled = true;
+            resetBtnContainer.classList.add('hidden');
         } else if (app.todayAttendance.clock_out) {
-            // 退勤済み（clock_outに値がある） → 両方無効
+            // 退勤済み（clock_outに値がある） → 両方無効、リセットボタン表示
             console.log('パターン2: 退勤済み');
             clockInBtn.disabled = true;
             clockOutBtn.disabled = true;
+            resetBtnContainer.classList.remove('hidden');
         } else {
-            // 出勤済み・未退勤 → 退勤ボタンのみ有効
+            // 出勤済み・未退勤 → 退勤ボタンのみ有効、リセットボタン表示
             console.log('パターン3: 出勤済み・未退勤 → 退勤ボタンを有効化');
             clockInBtn.disabled = true;
             clockOutBtn.disabled = false;
+            resetBtnContainer.classList.remove('hidden');
         }
         
         console.log('最終ボタン状態:', {
@@ -649,6 +669,23 @@ const clock = {
         app.todayAttendance = await api.getTodayAttendance(app.currentUser.id, today);
         this.updateTodayStatus();
         this.updateButtons();
+    },
+    
+    async resetClock() {
+        if (!app.todayAttendance || !app.todayAttendance.id) return;
+        
+        if (!confirm('本日の打刻データをリセットしますか？\nこの操作は取り消せません。')) return;
+        
+        try {
+            await api.deleteAttendance(app.todayAttendance.id);
+            app.todayAttendance = null;
+            this.updateTodayStatus();
+            this.updateButtons();
+            utils.showToast('打刻データをリセットしました', 'success');
+        } catch (error) {
+            console.error('リセットエラー:', error);
+            utils.showToast('リセットに失敗しました', 'error');
+        }
     }
 };
 
@@ -721,9 +758,14 @@ const attendance = {
             return `
             <tr class="hover:bg-gray-50">
                 <td class="px-2 md:px-4 py-2 md:py-3 text-sm sticky-col-left" style="position: sticky; left: 0; z-index: 5; background-color: white;">
-                    <button onclick="attendance.editAttendance('${att.id}')" class="text-blue-600 hover:text-blue-800 p-1">
-                        <i class="fas fa-edit text-sm md:text-base"></i>
-                    </button>
+                    <div class="flex gap-1">
+                        <button onclick="attendance.editAttendance('${att.id}')" class="text-blue-600 hover:text-blue-800 p-1" title="編集">
+                            <i class="fas fa-edit text-sm md:text-base"></i>
+                        </button>
+                        <button onclick="attendance.deleteAttendance('${att.id}')" class="text-red-600 hover:text-red-800 p-1" title="削除">
+                            <i class="fas fa-trash text-sm md:text-base"></i>
+                        </button>
+                    </div>
                 </td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm">
                     <span class="hidden md:inline">${utils.formatDate(att.date)}</span>
@@ -1071,6 +1113,19 @@ const attendance = {
         } catch (error) {
             console.error('勤怠追加エラー:', error);
             utils.showToast('追加に失敗しました', 'error');
+        }
+    },
+    
+    async deleteAttendance(id) {
+        if (!confirm('この勤怠データを削除しますか？\nこの操作は取り消せません。')) return;
+        
+        try {
+            await api.deleteAttendance(id);
+            utils.showToast('勤怠データを削除しました', 'success');
+            await this.loadAttendance();
+        } catch (error) {
+            console.error('勤怠削除エラー:', error);
+            utils.showToast('削除に失敗しました', 'error');
         }
     }
 };
@@ -1792,6 +1847,12 @@ const paidLeave = {
         
         // ステータスでフィルタリング
         let filteredRequests = app.leaveRequests;
+        
+        // 一般ユーザーは自分の申請のみ表示
+        if (app.currentUser.role !== 'admin') {
+            filteredRequests = filteredRequests.filter(lr => lr.employee_id === app.currentUser.id);
+        }
+        
         if (statusFilter) {
             filteredRequests = filteredRequests.filter(lr => lr.status === statusFilter);
         }
@@ -1804,10 +1865,18 @@ const paidLeave = {
         
         noDataMsg.classList.add('hidden');
         
-        // 管理者の場合は氏名列を追加
+        // 管理者かどうかで表示制御
         const isAdmin = app.currentUser.role === 'admin';
-        if (isAdmin) {
-            document.getElementById('leaveRequestActionHeader').textContent = '申請者 / 操作';
+        const nameHeader = document.getElementById('leaveRequestNameHeader');
+        const actionHeader = document.getElementById('leaveRequestActionHeader');
+        
+        if (!isAdmin) {
+            // 一般ユーザーは申請者列と操作列を非表示
+            nameHeader.style.display = 'none';
+            actionHeader.style.display = 'none';
+        } else {
+            nameHeader.style.display = '';
+            actionHeader.style.display = '';
         }
         
         const html = filteredRequests.map(request => {
@@ -1820,31 +1889,64 @@ const paidLeave = {
                 'rejected': '<span class="px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800">却下</span>'
             }[request.status] || '-';
             
-            const actionButtons = isAdmin && request.status === 'pending' 
-                ? `
-                    <div class="text-sm text-gray-600 mb-2">${employeeName}</div>
-                    <div class="flex gap-1">
-                        <button onclick="paidLeave.approveRequest('${request.id}')" class="px-2 py-1 rounded text-xs font-medium bg-green-500 hover:bg-green-600 text-white whitespace-nowrap">
-                            <i class="fas fa-check"></i> 承認
+            // 申請者列（管理者のみ）
+            const nameColumn = isAdmin 
+                ? `<td class="px-3 py-3 text-xs font-medium whitespace-nowrap sticky-col-left" style="position: sticky; left: 0; z-index: 5; background-color: white;">${employeeName}</td>`
+                : '';
+            
+            // 操作列（管理者のみ）
+            let actionColumn = '';
+            if (isAdmin) {
+                if (request.status === 'pending') {
+                    actionColumn = `
+                        <td class="px-2 py-2 text-xs sticky-col-left" style="position: sticky; left: 100px; z-index: 5; background-color: white;">
+                            <button onclick="paidLeave.approveRequest('${request.id}')" 
+                                    class="px-2 py-1 rounded text-xs font-bold bg-green-500 hover:bg-green-600 text-white"
+                                    title="承認">
+                                承認
+                            </button>
+                        </td>
+                    `;
+                } else if (request.status === 'approved') {
+                    actionColumn = `
+                        <td class="px-2 py-2 text-xs sticky-col-left" style="position: sticky; left: 100px; z-index: 5; background-color: white;">
+                            <button onclick="paidLeave.cancelApproval('${request.id}')" 
+                                    class="px-2 py-1 rounded text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white"
+                                    title="承認取り消し">
+                                取消
+                            </button>
+                        </td>
+                    `;
+                } else {
+                    actionColumn = `<td class="px-2 py-2 text-xs sticky-col-left" style="position: sticky; left: 100px; z-index: 5; background-color: white;">-</td>`;
+                }
+            }
+            
+            // 一般ユーザーは削除ボタンを表示（承認待ちのみ）
+            if (!isAdmin && request.status === 'pending') {
+                actionColumn = `
+                    <td class="px-2 py-2 text-xs">
+                        <button onclick="paidLeave.cancelRequest('${request.id}')" 
+                                class="px-2 py-1 rounded text-xs font-medium bg-red-500 hover:bg-red-600 text-white"
+                                title="申請取り消し">
+                            取消
                         </button>
-                        <button onclick="paidLeave.rejectRequest('${request.id}')" class="px-2 py-1 rounded text-xs font-medium bg-red-500 hover:bg-red-600 text-white whitespace-nowrap">
-                            <i class="fas fa-times"></i> 却下
-                        </button>
-                    </div>
-                `
-                : isAdmin 
-                    ? `<div class="text-sm text-gray-600">${employeeName}</div>`
-                    : '-';
+                    </td>
+                `;
+            } else if (!isAdmin) {
+                actionColumn = `<td class="px-2 py-2 text-xs">-</td>`;
+            }
             
             return `
             <tr class="hover:bg-gray-50">
+                ${nameColumn}
+                ${actionColumn}
                 <td class="px-3 py-3 text-xs whitespace-nowrap">${utils.formatDate(request.request_date)}</td>
                 <td class="px-3 py-3 text-xs whitespace-nowrap">${utils.formatDate(request.leave_date)}</td>
                 <td class="px-3 py-3 text-xs whitespace-nowrap">${request.leave_type}</td>
                 <td class="px-3 py-3 text-xs font-bold whitespace-nowrap">${request.leave_days}日</td>
                 <td class="px-3 py-3 text-xs text-gray-600">${request.reason || '-'}</td>
                 <td class="px-3 py-3 text-xs whitespace-nowrap">${statusBadge}</td>
-                <td class="px-3 py-3 text-xs">${actionButtons}</td>
             </tr>
         `}).join('');
         
@@ -1954,6 +2056,65 @@ const paidLeave = {
         } catch (error) {
             console.error('却下エラー:', error);
             utils.showToast('却下に失敗しました', 'error');
+        }
+    },
+    
+    async cancelApproval(requestId) {
+        if (!confirm('承認を取り消しますか？\n有給残日数は自動的に戻ります。')) return;
+        
+        try {
+            const request = app.leaveRequests.find(lr => lr.id === requestId);
+            if (!request || request.status !== 'approved') return;
+            
+            // 有給残日数を戻す（古い付与から順に戻す）
+            const employeeLeaves = app.paidLeaves
+                .filter(pl => pl.employee_id === request.employee_id && pl.status === 'active')
+                .sort((a, b) => a.grant_date.localeCompare(b.grant_date));
+            
+            let remainingToRestore = request.leave_days;
+            
+            for (const leave of employeeLeaves) {
+                if (remainingToRestore <= 0) break;
+                
+                const restoreAmount = Math.min(leave.grant_days - leave.remaining_days, remainingToRestore);
+                if (restoreAmount > 0) {
+                    const newRemaining = leave.remaining_days + restoreAmount;
+                    const newUsed = leave.used_days - restoreAmount;
+                    
+                    await api.updatePaidLeave(leave.id, {
+                        remaining_days: newRemaining,
+                        used_days: newUsed
+                    });
+                    
+                    remainingToRestore -= restoreAmount;
+                }
+            }
+            
+            // 申請ステータスをpendingに戻す
+            await api.updateLeaveRequest(requestId, {
+                status: 'pending',
+                approver_id: null,
+                approved_at: null
+            });
+            
+            utils.showToast('承認を取り消しました', 'success');
+            await this.loadPaidLeave();
+        } catch (error) {
+            console.error('承認取り消しエラー:', error);
+            utils.showToast('取り消しに失敗しました', 'error');
+        }
+    },
+    
+    async cancelRequest(requestId) {
+        if (!confirm('この申請を取り消しますか？')) return;
+        
+        try {
+            await api.deleteLeaveRequest(requestId);
+            utils.showToast('申請を取り消しました', 'success');
+            await this.loadPaidLeave();
+        } catch (error) {
+            console.error('申請取り消しエラー:', error);
+            utils.showToast('取り消しに失敗しました', 'error');
         }
     }
 };
@@ -2067,6 +2228,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 打刻ボタン
     document.getElementById('clockInBtn').addEventListener('click', () => clock.clockIn());
     document.getElementById('clockOutBtn').addEventListener('click', () => clock.clockOut());
+    document.getElementById('resetClockBtn').addEventListener('click', () => clock.resetClock());
     
     // ダッシュボードフィルター
     document.getElementById('dashboardFilterBtn').addEventListener('click', () => dashboard.updateDashboard());

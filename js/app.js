@@ -1391,10 +1391,10 @@ const compensatoryManagement = {
             
             return `
             <tr class="hover:bg-gray-50">
-                <td class="px-3 py-3 text-xs sticky-col-left" style="position: sticky; left: 0; z-index: 5; background-color: white; min-width: 80px;">
-                    <div class="flex gap-1 justify-center">
+                <td class="px-2 py-2 text-xs sticky-col-left" style="position: sticky; left: 0; z-index: 5; background-color: white; min-width: 50px;">
+                    <div class="flex gap-0.5 justify-center">
                         <button onclick="compensatoryManagement.toggleUsed('${leave.id}', ${!leave.used})" 
-                                class="px-3 py-1.5 rounded text-xs font-bold transition ${
+                                class="px-2 py-1 rounded text-xs font-bold transition ${
                                     leave.used 
                                         ? 'bg-green-500 hover:bg-green-600 text-white' 
                                         : 'bg-gray-500 hover:bg-gray-600 text-white'
@@ -1404,9 +1404,9 @@ const compensatoryManagement = {
                         </button>
                         ${leave.used ? `
                         <button onclick="compensatoryManagement.saveUsedDate('${leave.id}')" 
-                                class="px-2 py-1.5 rounded text-xs font-medium transition bg-blue-500 hover:bg-blue-600 text-white"
+                                class="px-1.5 py-1 rounded text-xs font-medium transition bg-blue-500 hover:bg-blue-600 text-white"
                                 title="使用日を保存">
-                            <i class="fas fa-save"></i>
+                            <i class="fas fa-save text-xs"></i>
                         </button>
                         ` : ''}
                     </div>

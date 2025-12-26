@@ -34,9 +34,16 @@ const utils = {
         return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     },
     
-    // 現在の日時をタイムスタンプ形式で取得 (ISO 8601)
+    // 現在の日時をタイムスタンプ形式で取得 (ローカルタイム、タイムゾーン情報なし)
     getCurrentTimestamp() {
-        return new Date().toISOString();
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
     },
     
     // 日付フォーマット (YYYY-MM-DD → YYYY年MM月DD日)

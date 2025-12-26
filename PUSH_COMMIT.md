@@ -1,19 +1,18 @@
-有給休暇管理機能を実装
+PWA対応：ホーム画面に追加可能に
 
 ■ 実装内容
-- 有給休暇タブの追加（ナビゲーション）
-- 有給残日数カードの表示（残日数/付与/使用）
-- 有給申請フォーム（全日/半日AM/半日PM）
-- 申請一覧とステータス管理（承認待ち/承認済み/却下）
-- 管理者向け承認/却下機能
-- 承認時の有給残日数自動減算（古い付与から順に消化）
-- API追加: getPaidLeaves, getLeaveRequests, createLeaveRequest, updateLeaveRequest, updatePaidLeave
+- manifest.jsonを作成（アプリ名、テーマカラー、アイコン設定）
+- HTMLにPWA設定を追加（manifest読み込み、Apple Touch Icon設定）
+- スマホのホーム画面に追加可能に
+- スタンドアロンモード対応（ブラウザUIなしで起動）
+- iOS/Android両対応
 
 ■ 変更ファイル
-- index.html: 有給休暇ビューとナビゲーションタブを追加
-- js/app.js: paidLeaveオブジェクトを実装、API関数追加、イベントリスナー追加
+- manifest.json: 新規作成
+- index.html: PWA設定追加（head部分）
+- icon-generator.html: アイコン生成ツール（開発用）
 
-■ データベース前提
-- paid_leaveテーブル
-- leave_requestsテーブル
-- employeesテーブルにhire_dateカラム
+■ 使用方法
+スマホで https://attendance-system.pages.dev を開き、
+- iOS: 共有ボタン → ホーム画面に追加
+- Android: メニュー → ホーム画面に追加

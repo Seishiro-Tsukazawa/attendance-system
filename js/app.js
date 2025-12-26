@@ -265,6 +265,14 @@ const api = {
         return result[0];
     },
     
+    // 振替休暇削除（勤怠削除時に使用）
+    async deleteCompensatoryLeaveByWorkDate(employeeId, workDate) {
+        await fetch(`${SUPABASE_URL}/rest/v1/compensatory_leave?employee_id=eq.${employeeId}&work_date=eq.${workDate}`, {
+            method: 'DELETE',
+            headers: supabaseHeaders
+        });
+    },
+    
     // 有給休暇取得
     async getPaidLeaves() {
         const response = await fetch(`${SUPABASE_URL}/rest/v1/paid_leave?order=grant_date.desc`, {
@@ -693,6 +701,15 @@ const clock = {
         if (!confirm('本日の打刻データをリセットしますか？\nこの操作は取り消せません。')) return;
         
         try {
+            // 休日出勤の場合、対応する振替休暇も削除
+            if (app.todayAttendance.shift_type === '休日出勤') {
+                await api.deleteCompensatoryLeaveByWorkDate(
+                    app.todayAttendance.employee_id, 
+                    app.todayAttendance.date
+                );
+            }
+            
+            // 打刻データを削除
             await api.deleteAttendance(app.todayAttendance.id);
             app.todayAttendance = null;
             this.updateTodayStatus();
@@ -1136,6 +1153,19 @@ const attendance = {
         if (!confirm('この勤怠データを削除しますか？\nこの操作は取り消せません。')) return;
         
         try {
+            // 削除対象の勤怠データを取得
+            const att = app.allAttendance.find(a => a.id === id);
+            if (!att) {
+                utils.showToast('勤怠データが見つかりません', 'error');
+                return;
+            }
+            
+            // 休日出勤の場合、対応する振替休暇も削除
+            if (att.shift_type === '休日出勤') {
+                await api.deleteCompensatoryLeaveByWorkDate(att.employee_id, att.date);
+            }
+            
+            // 勤怠データを削除
             await api.deleteAttendance(id);
             utils.showToast('勤怠データを削除しました', 'success');
             await this.loadAttendance();

@@ -409,12 +409,13 @@
                         </div>
                     </div>
                     
-                    <div class="overflow-x-auto responsive-table">
+                    <div class="overflow-x-auto responsive-table" style="position: relative;">
                         <table class="w-full text-sm md:text-base">
                             <thead class="bg-gray-100">
                                 <tr>
+                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 sticky-col-left" style="position: sticky; left: 0; z-index: 10; background-color: rgb(243, 244, 246);">操作</th>
                                     <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">日付</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">氏名</th>
+                                    <th id="attendanceNameHeader" class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">氏名</th>
                                     <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">シフト</th>
                                     <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">出勤</th>
                                     <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">退勤</th>
@@ -423,7 +424,6 @@
                                     <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">残業時間</th>
                                     <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">振替</th>
                                     <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">備考</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">操作</th>
                                 </tr>
                             </thead>
                             <tbody id="attendanceTableBody" class="divide-y divide-gray-200">
@@ -447,7 +447,7 @@
                             <h2 class="text-xl md:text-2xl font-bold text-gray-800 compact-header">
                                 <i class="fas fa-calendar-check text-tsunagu-red mr-2"></i>振替休暇管理
                             </h2>
-                            <div class="flex flex-col sm:flex-row gap-2 md:gap-3 w-full md:w-auto">
+                            <div id="compensatoryFilterContainer" class="flex flex-col sm:flex-row gap-2 md:gap-3 w-full md:w-auto hidden">
                                 <select id="compensatoryEmployeeFilter" class="px-3 md:px-4 py-2 border border-gray-300 rounded-lg text-sm md:text-base w-full sm:w-auto">
                                     <option value="">全員</option>
                                     <!-- JavaScriptで動的生成 -->
@@ -458,11 +458,12 @@
                             </div>
                         </div>
                         
-                        <div class="overflow-x-auto responsive-table">
+                        <div class="overflow-x-auto responsive-table" style="position: relative;">
                             <table class="w-full text-sm md:text-base" style="min-width: 1000px;">
                                 <thead class="bg-gray-100">
                                     <tr>
-                                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 whitespace-nowrap" style="width: 100px;">氏名</th>
+                                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 whitespace-nowrap sticky-col-left" style="width: 230px; position: sticky; left: 0; z-index: 10; background-color: rgb(243, 244, 246);">操作</th>
+                                        <th id="compensatoryNameHeader" class="px-3 py-3 text-left text-xs font-medium text-gray-700 whitespace-nowrap" style="width: 100px;">氏名</th>
                                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 whitespace-nowrap" style="width: 120px;">休日出勤日</th>
                                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 whitespace-nowrap" style="width: 80px;">出勤</th>
                                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 whitespace-nowrap" style="width: 80px;">退勤</th>
@@ -470,7 +471,6 @@
                                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 whitespace-nowrap" style="width: 80px;">振替</th>
                                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 whitespace-nowrap" style="width: 140px;">使用日</th>
                                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 whitespace-nowrap" style="width: 80px;">状態</th>
-                                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 whitespace-nowrap" style="width: 230px;">操作</th>
                                     </tr>
                                 </thead>
                                 <tbody id="compensatoryTableBody" class="divide-y divide-gray-200">
@@ -771,8 +771,8 @@
     </div>
 
     <!-- モーダル: 勤怠新規追加 -->
-    <div id="addAttendanceModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-xl shadow-2xl p-4 md:p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <div id="addAttendanceModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" style="overflow-y: auto;">
+        <div class="bg-white rounded-xl shadow-2xl p-4 md:p-8 w-full max-w-2xl my-8" style="max-height: calc(100vh - 4rem); overflow-y: auto;">
             <h3 class="text-lg md:text-xl font-bold text-gray-800 mb-4 md:mb-6">
                 <i class="fas fa-plus-circle text-tsunagu-green mr-2"></i>勤怠データを新規追加
             </h3>

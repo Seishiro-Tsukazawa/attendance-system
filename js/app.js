@@ -992,11 +992,8 @@ const attendance = {
             <tr class="hover:bg-gray-50">
                 <td class="px-2 md:px-4 py-2 md:py-3 text-sm sticky-col-left" style="position: sticky; left: 0; z-index: 5; background-color: white;">
                     <div class="flex gap-1">
-                        <button onclick="attendance.editAttendance('${att.id}')" class="text-blue-600 hover:text-blue-800 p-1" title="編集">
-                            <i class="fas fa-edit text-sm md:text-base"></i>
-                        </button>
-                        <button onclick="attendance.deleteAttendance('${att.id}')" class="text-red-600 hover:text-red-800 p-1" title="削除">
-                            <i class="fas fa-trash text-sm md:text-base"></i>
+                        <button onclick="attendance.editAttendance('${att.id}')" class="flex items-center gap-1 text-blue-600 hover:text-blue-800 px-2 py-1 rounded-lg bg-blue-50" title="編集">
+                            <i class="fas fa-edit text-sm md:text-base"></i><span class="hidden md:inline text-xs">編集</span>
                         </button>
                         <button onclick="attendance.toggleDetail('${att.id}')" class="md:hidden text-gray-600 hover:text-gray-800 p-1" title="詳細表示">
                             <i class="fas fa-ellipsis-h"></i>
@@ -1074,8 +1071,9 @@ const attendance = {
                             </div>
                         </div>
                         <div class="flex items-center gap-1 ml-3">
-                            <button onclick="attendance.editAttendance('${att.id}')" class="p-2 text-blue-600 hover:text-blue-800" title="編集"><i class="fas fa-edit"></i></button>
-                            <button onclick="attendance.deleteAttendance('${att.id}')" class="p-2 text-red-600 hover:text-red-800" title="削除"><i class="fas fa-trash"></i></button>
+                            <button onclick="attendance.editAttendance('${att.id}')" class="px-2 py-1 text-blue-700 hover:text-blue-900 bg-blue-50 rounded-lg text-xs font-semibold" title="編集">
+                                <i class="fas fa-edit text-sm"></i><span class="ml-1">編集</span>
+                            </button>
                         </div>
                     </div>
                     <div class="grid grid-cols-2 gap-3 mt-3">
@@ -1087,14 +1085,10 @@ const attendance = {
                             <div class="attendance-metric-label text-gray-500 flex items-center gap-1"><i class="fas fa-sign-out-alt"></i>退勤</div>
                             <div class="attendance-metric-value font-semibold text-red-700 mt-1">${utils.formatTime(att.clock_out)}</div>
                         </div>
-                        <div class="bg-gray-50 rounded-lg p-2">
-                            <div class="attendance-metric-label text-gray-500">勤務時間</div>
-                            <div class="attendance-metric-value font-semibold text-gray-800 mt-1">${att.work_hours}時間</div>
-                        </div>
-                        <div class="bg-gray-50 rounded-lg p-2">
-                            <div class="attendance-metric-label text-gray-500">残業</div>
-                            <div class="attendance-metric-value font-semibold ${att.overtime_hours > 0 ? 'text-orange-600' : 'text-gray-500'} mt-1">${att.overtime_hours || 0}時間</div>
-                        </div>
+                    </div>
+                    <div class="mt-2 text-[11px] text-gray-600 flex flex-wrap gap-3">
+                        <span class="flex items-center gap-1"><i class="fas fa-briefcase"></i>勤務 ${att.work_hours}時間</span>
+                        <span class="flex items-center gap-1 ${att.overtime_hours > 0 ? 'text-orange-600' : 'text-gray-500'}"><i class="fas fa-fire-alt"></i>残業 ${att.overtime_hours || 0}時間</span>
                     </div>
                     <div class="mt-2 text-[11px] text-gray-600">備考: ${att.note || 'なし'}</div>
                 </div>
@@ -1443,8 +1437,10 @@ const attendance = {
         }
     },
     
-    async deleteAttendance(id) {
-        if (!confirm('この勤怠データを削除しますか？\nこの操作は取り消せません。')) return;
+    async deleteAttendance(id, options = {}) {
+        const { skipConfirm = false } = options;
+
+        if (!skipConfirm && !confirm('この勤怠データを削除しますか？\nこの操作は取り消せません。')) return;
         
         try {
             // 削除対象の勤怠データを取得
@@ -1467,6 +1463,16 @@ const attendance = {
             console.error('勤怠削除エラー:', error);
             utils.showToast('削除に失敗しました', 'error');
         }
+    },
+
+    async deleteAttendanceFromModal() {
+        const id = document.getElementById('editAttendanceId').value;
+        if (!id) return;
+
+        if (!confirm('この勤怠データを削除しますか？\nこの操作は取り消せません。')) return;
+
+        document.getElementById('attendanceModal').classList.add('hidden');
+        await this.deleteAttendance(id, { skipConfirm: true });
     }
 };
 
@@ -2597,6 +2603,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('cancelAttendanceBtn').addEventListener('click', () => {
         document.getElementById('attendanceModal').classList.add('hidden');
     });
+    document.getElementById('deleteAttendanceBtn').addEventListener('click', () => attendance.deleteAttendanceFromModal());
     document.getElementById('attendanceEditForm').addEventListener('submit', (e) => attendance.saveAttendance(e));
     
     // 勤怠新規追加

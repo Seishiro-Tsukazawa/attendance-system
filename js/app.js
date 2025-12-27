@@ -132,10 +132,15 @@ const utils = {
         toastIcon.innerHTML = icons[type];
         toastMessage.textContent = message;
         toast.classList.remove('hidden');
-        
+
         setTimeout(() => {
             toast.classList.add('hidden');
         }, 3000);
+    },
+
+    // 管理者(000)を従業員選択肢から除外
+    getSelectableEmployees(employees = []) {
+        return employees.filter(emp => emp.id !== '000');
     }
 };
 
@@ -201,6 +206,15 @@ const api = {
         });
         const result = await response.json();
         return result[0];
+    },
+
+    // 勤怠記録取得（従業員と期間指定）
+    async getAttendanceByRange(employeeId, startDate, endDate) {
+        const query = `${SUPABASE_URL}/rest/v1/attendance?employee_id=eq.${employeeId}&date=gte.${startDate}&date=lte.${endDate}&select=*`;
+        const response = await fetch(query, {
+            headers: supabaseHeaders
+        });
+        return await response.json();
     },
     
     // 勤怠記録作成
@@ -364,6 +378,7 @@ const auth = {
     logout() {
         app.currentUser = null;
         localStorage.removeItem('currentUser');
+        shiftSelection.resetSelection();
         showScreen('login');
     },
     
@@ -568,10 +583,108 @@ const loginAssistant = {
     }
 };
 
+// シフト選択管理
+const shiftSelection = {
+    selectedShift: null,
+    defaultTripHours: { start: '08:30', end: '17:30' },
+
+    init() {
+        this.shiftRadios = Array.from(document.querySelectorAll('input[name="shiftType"]'));
+        this.holidayToggle = document.getElementById('holidayWorkToggle');
+        this.hintEl = document.getElementById('shiftSelectionHint');
+        this.defaultHoursEl = document.getElementById('shiftDefaultHours');
+
+        this.shiftRadios.forEach(radio => {
+            radio.addEventListener('change', () => {
+                this.selectedShift = radio.value;
+                this.updateHint();
+                this.updateDefaultHours();
+                clock.updateButtons();
+            });
+        });
+
+        if (this.holidayToggle) {
+            this.holidayToggle.addEventListener('change', () => {
+                this.updateDefaultHours();
+                clock.updateButtons();
+            });
+        }
+
+        this.updateHint();
+        this.updateDefaultHours();
+    },
+
+    applyAttendanceShift(shiftType) {
+        if (!shiftType) return;
+
+        // 休日出張は出張にチェックし、休日扱いトグルをONにする
+        const normalized = shiftType === '休日出張' ? '出張' : shiftType;
+        const targetRadio = this.shiftRadios.find(radio => radio.value === normalized);
+
+        if (targetRadio) {
+            targetRadio.checked = true;
+            this.selectedShift = normalized;
+
+            if (this.holidayToggle) {
+                const shouldEnableHoliday = shiftType === '休日出張';
+                this.holidayToggle.checked = shouldEnableHoliday;
+            }
+
+            this.updateHint();
+            this.updateDefaultHours();
+        }
+    },
+
+    resetSelection() {
+        this.shiftRadios.forEach(radio => (radio.checked = false));
+        if (this.holidayToggle) {
+            this.holidayToggle.checked = false;
+        }
+        this.selectedShift = null;
+        this.updateHint();
+        this.updateDefaultHours();
+    },
+
+    getCurrentShift() {
+        if (!this.selectedShift) return null;
+        if (this.selectedShift === '出張' && this.holidayToggle?.checked) {
+            return '休日出張';
+        }
+        return this.selectedShift;
+    },
+
+    updateHint() {
+        if (!this.hintEl) return;
+        const hasSelection = Boolean(this.selectedShift);
+        this.hintEl.textContent = hasSelection
+            ? '選択中のシフトで打刻を記録します。'
+            : 'シフトを選択すると打刻ボタンが有効になります。';
+        this.hintEl.classList.toggle('text-red-600', !hasSelection);
+        this.hintEl.classList.toggle('text-green-700', hasSelection);
+    },
+
+    updateDefaultHours() {
+        if (!this.defaultHoursEl) return;
+        const shift = this.getCurrentShift();
+
+        if (shift && shift.includes('出張')) {
+            this.defaultHoursEl.textContent = `出張の初期値: ${this.defaultTripHours.start}〜${this.defaultTripHours.end}（変更可）`;
+            this.defaultHoursEl.classList.remove('hidden');
+        } else {
+            this.defaultHoursEl.textContent = '';
+            this.defaultHoursEl.classList.add('hidden');
+        }
+    }
+};
+
 // 打刻処理
 const clock = {
     async clockIn() {
-        const shiftType = document.querySelector('input[name="shiftType"]:checked').value;
+        const shiftType = shiftSelection.getCurrentShift();
+        if (!shiftType) {
+            utils.showToast('シフトを選択してください', 'error');
+            return;
+        }
         const clockInTime = utils.getCurrentTimestamp(); // タイムスタンプ形式に変更
         const date = utils.getCurrentDate();
         
@@ -640,9 +753,9 @@ const clock = {
             
             const updated = await api.updateAttendance(app.todayAttendance.id, updatedData);
             app.todayAttendance = updated;
-            
-            // 休日出勤の場合、振替休暇を記録
-            if (app.todayAttendance.shift_type === '休日出勤') {
+
+            // 休日出勤の場合、振替休暇を記録（休日出張含む）
+            if (['休日出勤', '休日出張'].includes(app.todayAttendance.shift_type)) {
                 const comp = utils.calculateCompensatory(workHours);
                 await api.createCompensatoryLeave({
                     employee_id: app.currentUser.id,
@@ -654,9 +767,10 @@ const clock = {
                     used_date: null
                 });
             }
-            
+
             this.updateTodayStatus();
             this.updateButtons();
+            await this.updateMonthlyOvertime();
             utils.showToast('退勤を記録しました', 'success');
         } catch (error) {
             console.error('退勤エラー:', error);
@@ -675,26 +789,26 @@ const clock = {
         const { clock_in, clock_out, shift_type, work_hours } = app.todayAttendance;
         
         let html = `
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-2 gap-2 sm:gap-3 text-xs md:text-sm">
                 <div>
-                    <div class="text-sm text-gray-600">シフト</div>
-                    <div class="text-lg font-bold text-tsunagu-blue">${shift_type}</div>
+                    <div class="text-[11px] text-gray-600">シフト</div>
+                    <div class="text-base md:text-lg font-bold text-tsunagu-blue">${shift_type}</div>
                 </div>
                 <div>
-                    <div class="text-sm text-gray-600">出勤時刻</div>
-                    <div class="text-lg font-bold text-tsunagu-green">${utils.formatTime(clock_in)}</div>
+                    <div class="text-[11px] text-gray-600">出勤時刻</div>
+                    <div class="text-base md:text-lg font-bold text-tsunagu-green">${utils.formatTime(clock_in)}</div>
                 </div>
         `;
         
         if (clock_out) {
             html += `
                 <div>
-                    <div class="text-sm text-gray-600">退勤時刻</div>
-                    <div class="text-lg font-bold text-tsunagu-red">${utils.formatTime(clock_out)}</div>
+                    <div class="text-[11px] text-gray-600">退勤時刻</div>
+                    <div class="text-base md:text-lg font-bold text-tsunagu-red">${utils.formatTime(clock_out)}</div>
                 </div>
                 <div>
-                    <div class="text-sm text-gray-600">勤務時間</div>
-                    <div class="text-lg font-bold text-gray-800">${work_hours}時間</div>
+                    <div class="text-[11px] text-gray-600">勤務時間</div>
+                    <div class="text-base md:text-lg font-bold text-gray-800">${work_hours}時間</div>
                 </div>
             `;
         }
@@ -707,44 +821,71 @@ const clock = {
         const clockInBtn = document.getElementById('clockInBtn');
         const clockOutBtn = document.getElementById('clockOutBtn');
         const resetBtnContainer = document.getElementById('resetBtnContainer');
-        
-        console.log('=== updateButtons実行 ===');
-        console.log('app.todayAttendance:', app.todayAttendance);
-        console.log('clock_out値:', app.todayAttendance?.clock_out);
-        console.log('clock_outの型:', typeof app.todayAttendance?.clock_out);
-        
+
+        const hasShiftSelection = Boolean(shiftSelection.getCurrentShift());
+
         if (!app.todayAttendance || !app.todayAttendance.id) {
-            // 出勤データなし → 出勤ボタンのみ有効、リセットボタン非表示
-            console.log('パターン1: 出勤データなし');
-            clockInBtn.disabled = false;
+            // 出勤データなし → シフト未選択なら両方無効、選択済みなら出勤ボタンのみ有効
+            clockInBtn.disabled = !hasShiftSelection;
             clockOutBtn.disabled = true;
             resetBtnContainer.classList.add('hidden');
         } else if (app.todayAttendance.clock_out) {
             // 退勤済み（clock_outに値がある） → 両方無効、リセットボタン表示
-            console.log('パターン2: 退勤済み');
             clockInBtn.disabled = true;
             clockOutBtn.disabled = true;
             resetBtnContainer.classList.remove('hidden');
         } else {
             // 出勤済み・未退勤 → 退勤ボタンのみ有効、リセットボタン表示
-            console.log('パターン3: 出勤済み・未退勤 → 退勤ボタンを有効化');
             clockInBtn.disabled = true;
             clockOutBtn.disabled = false;
             resetBtnContainer.classList.remove('hidden');
         }
-        
-        console.log('最終ボタン状態:', {
-            clockInBtn_disabled: clockInBtn.disabled,
-            clockOutBtn_disabled: clockOutBtn.disabled
-        });
-        console.log('========================');
     },
-    
+
+    async updateMonthlyOvertime(useCached = false) {
+        const valueEl = document.getElementById('monthlyOvertimeValue');
+        const rangeEl = document.getElementById('monthlyOvertimeRange');
+        if (!valueEl || !rangeEl) return;
+
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const startDate = `${year}-${month}-01`;
+        const endDate = new Date(year, now.getMonth() + 1, 0).toISOString().split('T')[0];
+
+        rangeEl.textContent = `${year}年${month}月`;
+        valueEl.textContent = '集計中...';
+
+        try {
+            let attendanceList = [];
+
+            if (useCached && app.allAttendance.length > 0) {
+                attendanceList = app.allAttendance;
+            } else {
+                attendanceList = await api.getAttendanceByRange(app.currentUser.id, startDate, endDate);
+            }
+
+            const personalRecords = attendanceList.filter(att =>
+                att.employee_id === app.currentUser.id &&
+                att.date >= startDate && att.date <= endDate &&
+                att.clock_out
+            );
+
+            const overtimeHours = personalRecords.reduce((sum, att) => sum + (att.overtime_hours || 0), 0);
+            valueEl.textContent = `${Math.round(overtimeHours * 10) / 10}時間`;
+        } catch (error) {
+            console.error('残業時間集計エラー:', error);
+            valueEl.textContent = '—';
+        }
+    },
+
     async loadTodayAttendance() {
         const today = utils.getCurrentDate();
         app.todayAttendance = await api.getTodayAttendance(app.currentUser.id, today);
+        shiftSelection.applyAttendanceShift(app.todayAttendance?.shift_type);
         this.updateTodayStatus();
         this.updateButtons();
+        await this.updateMonthlyOvertime();
     },
     
     async resetClock() {
@@ -753,10 +894,10 @@ const clock = {
         if (!confirm('本日の打刻データをリセットしますか？\nこの操作は取り消せません。')) return;
         
         try {
-            // 休日出勤の場合、対応する振替休暇も削除
-            if (app.todayAttendance.shift_type === '休日出勤') {
+            // 休日出勤の場合、対応する振替休暇も削除（休日出張含む）
+            if (['休日出勤', '休日出張'].includes(app.todayAttendance.shift_type)) {
                 await api.deleteCompensatoryLeaveByWorkDate(
-                    app.todayAttendance.employee_id, 
+                    app.todayAttendance.employee_id,
                     app.todayAttendance.date
                 );
             }
@@ -766,65 +907,12 @@ const clock = {
             app.todayAttendance = null;
             this.updateTodayStatus();
             this.updateButtons();
+            await this.updateMonthlyOvertime();
             utils.showToast('打刻データをリセットしました', 'success');
         } catch (error) {
             console.error('リセットエラー:', error);
             utils.showToast('リセットに失敗しました', 'error');
         }
-    }
-};
-
-// 打刻前確認モーダル
-const clockConfirm = {
-    action: null,
-
-    open(action) {
-        this.action = action;
-        const modal = document.getElementById('clockConfirmModal');
-        const shift = document.querySelector('input[name="shiftType"]:checked')?.value || '-';
-        const currentTime = utils.getCurrentTime();
-        const statusText = app.todayAttendance
-            ? `出勤: ${utils.formatTime(app.todayAttendance.clock_in)}${app.todayAttendance.clock_out ? ` / 退勤: ${utils.formatTime(app.todayAttendance.clock_out)}` : ''}`
-            : 'まだ打刻がありません';
-
-        document.getElementById('clockConfirmTitle').textContent = action === 'clockIn' ? '出勤を記録しますか？' : '退勤を記録しますか？';
-        document.getElementById('confirmShiftType').textContent = shift;
-        document.getElementById('confirmTargetTime').textContent = `${currentTime} に記録`; 
-        document.getElementById('confirmCurrentStatus').textContent = statusText;
-
-        const workPreview = document.getElementById('confirmWorkPreview');
-        const workHoursEl = document.getElementById('confirmWorkHours');
-        const workNoteEl = document.getElementById('confirmWorkNote');
-
-        if (action === 'clockOut' && app.todayAttendance?.clock_in) {
-            const preview = utils.calculateWorkHours(
-                utils.formatTime(app.todayAttendance.clock_in),
-                currentTime
-            );
-            workHoursEl.textContent = `${preview.workHours}時間（休憩 ${preview.breakMinutes}分控除後）`;
-            workNoteEl.textContent = preview.workHours >= 7.5 ? '残業ラインが近いため、内容を確認してください。' : '';
-            workPreview.classList.remove('hidden');
-        } else {
-            workPreview.classList.add('hidden');
-            workHoursEl.textContent = '';
-            workNoteEl.textContent = '';
-        }
-
-        modal.classList.remove('hidden');
-    },
-
-    close() {
-        document.getElementById('clockConfirmModal').classList.add('hidden');
-        this.action = null;
-    },
-
-    async confirm() {
-        if (this.action === 'clockIn') {
-            await clock.clockIn();
-        } else if (this.action === 'clockOut') {
-            await clock.clockOut();
-        }
-        this.close();
     }
 };
 
@@ -834,10 +922,15 @@ const attendance = {
         app.allEmployees = await api.getEmployees(); // 従業員データを取得
         app.allAttendance = await api.getAttendance();
         app.compensatoryLeaves = await api.getCompensatoryLeaves();
-        
+
         // 新規追加ボタンを表示（全ユーザー）
         document.getElementById('addAttendanceBtn').classList.remove('hidden');
-        
+
+        // 月フィルターを当月にセット
+        const monthInput = document.getElementById('monthFilter');
+        const currentMonth = new Date().toISOString().substring(0, 7);
+        if (monthInput) monthInput.value = currentMonth;
+
         // 管理者の場合は従業員フィルターも表示＆従業員リストを生成
         const nameHeader = document.getElementById('attendanceNameHeader');
         if (app.currentUser.role === 'admin') {
@@ -847,37 +940,51 @@ const attendance = {
         } else {
             if (nameHeader) nameHeader.style.display = 'none';
         }
-        
+
         // デフォルトで当月のデータを表示
         this.filterByMonth();
+        await clock.updateMonthlyOvertime(true);
     },
-    
+
     populateEmployeeFilter() {
         const select = document.getElementById('employeeFilter');
-        const options = app.allEmployees.map(emp => 
+        const selectableEmployees = utils.getSelectableEmployees(app.allEmployees);
+
+        const options = selectableEmployees.map(emp =>
             `<option value="${emp.id}">${emp.name}</option>`
         ).join('');
-        select.innerHTML = '<option value="">全員</option>' + options;
+        select.innerHTML = options;
+
+        // デフォルトで先頭の従業員を選択
+        if (selectableEmployees.length > 0) {
+            select.value = selectableEmployees[0].id;
+        } else {
+            select.value = '';
+        }
     },
     
     renderTable() {
         const tbody = document.getElementById('attendanceTableBody');
+        const cardList = document.getElementById('attendanceCardList');
         const noDataMsg = document.getElementById('noDataMessage');
-        
+
         if (app.filteredAttendance.length === 0) {
             tbody.innerHTML = '';
+            if (cardList) cardList.innerHTML = '';
             noDataMsg.classList.remove('hidden');
+            this.updateMonthlySummary();
+            this.checkOvertimeAlert();
             return;
         }
-        
+
         noDataMsg.classList.add('hidden');
 
-        const html = app.filteredAttendance.map(att => {
+        const tableHtml = app.filteredAttendance.map(att => {
             // employee_idから従業員名を取得
             const employee = app.allEmployees.find(e => e.id === att.employee_id);
             const employeeName = employee ? employee.name : '不明';
             let compensatoryInfo = '-';
-            if (att.shift_type === '休日出勤' && att.work_hours > 0) {
+            if (['休日出勤', '休日出張'].includes(att.shift_type) && att.work_hours > 0) {
                 const comp = utils.calculateCompensatory(att.work_hours);
                 if (comp.days > 0) {
                     compensatoryInfo = `${comp.days}日`;
@@ -885,12 +992,20 @@ const attendance = {
                     compensatoryInfo = `${comp.hours}時間`;
                 }
             }
-            
+
             // 日付を短縮表示（モバイル対応）
             const shortDate = att.date.split('-').slice(1).join('/'); // MM/DD形式
-            
+            const formattedDate = utils.formatDate(att.date);
+
+            const shiftBadgeClass =
+                att.shift_type === '早番' ? 'bg-yellow-100 text-yellow-800' :
+                att.shift_type === '遅番' ? 'bg-blue-100 text-blue-800' :
+                att.shift_type === '出張' ? 'bg-purple-100 text-purple-800' :
+                att.shift_type === '休日出張' ? 'bg-purple-50 text-purple-900 border border-purple-200' :
+                'bg-red-100 text-red-800';
+
             // 名前列は管理者のみ表示
-            const nameColumn = app.currentUser.role === 'admin' 
+            const nameColumn = app.currentUser.role === 'admin'
                 ? `<td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium">${employeeName}</td>`
                 : '';
 
@@ -898,11 +1013,8 @@ const attendance = {
             <tr class="hover:bg-gray-50">
                 <td class="px-2 md:px-4 py-2 md:py-3 text-sm sticky-col-left" style="position: sticky; left: 0; z-index: 5; background-color: white;">
                     <div class="flex gap-1">
-                        <button onclick="attendance.editAttendance('${att.id}')" class="text-blue-600 hover:text-blue-800 p-1" title="編集">
-                            <i class="fas fa-edit text-sm md:text-base"></i>
-                        </button>
-                        <button onclick="attendance.deleteAttendance('${att.id}')" class="text-red-600 hover:text-red-800 p-1" title="削除">
-                            <i class="fas fa-trash text-sm md:text-base"></i>
+                        <button onclick="attendance.editAttendance('${att.id}')" class="flex items-center gap-1 text-blue-600 hover:text-blue-800 px-2 py-1 rounded-lg bg-blue-50" title="編集">
+                            <i class="fas fa-edit text-sm md:text-base"></i><span class="hidden md:inline text-xs">編集</span>
                         </button>
                         <button onclick="attendance.toggleDetail('${att.id}')" class="md:hidden text-gray-600 hover:text-gray-800 p-1" title="詳細表示">
                             <i class="fas fa-ellipsis-h"></i>
@@ -918,6 +1030,8 @@ const attendance = {
                     <span class="px-1.5 md:px-2 py-0.5 md:py-1 rounded text-xs font-medium ${
                         att.shift_type === '早番' ? 'bg-yellow-100 text-yellow-800' :
                         att.shift_type === '遅番' ? 'bg-blue-100 text-blue-800' :
+                        att.shift_type === '出張' ? 'bg-purple-100 text-purple-800' :
+                        att.shift_type === '休日出張' ? 'bg-purple-50 text-purple-900 border border-purple-200' :
                         'bg-red-100 text-red-800'
                     }">
                         ${att.shift_type}
@@ -943,8 +1057,68 @@ const attendance = {
                 </td>
             </tr>
         `}).join('');
-        
-        tbody.innerHTML = html;
+
+        tbody.innerHTML = tableHtml;
+
+        if (cardList) {
+            const cardHtml = app.filteredAttendance.map(att => {
+                const employee = app.allEmployees.find(e => e.id === att.employee_id);
+                const employeeName = employee ? employee.name : '不明';
+                let compensatoryInfo = '-';
+                if (['休日出勤', '休日出張'].includes(att.shift_type) && att.work_hours > 0) {
+                    const comp = utils.calculateCompensatory(att.work_hours);
+                    compensatoryInfo = comp.days > 0 ? `${comp.days}日` : `${comp.hours}時間`;
+                }
+
+                const shiftBadgeClass =
+                    att.shift_type === '早番' ? 'bg-yellow-100 text-yellow-800' :
+                    att.shift_type === '遅番' ? 'bg-blue-100 text-blue-800' :
+                    att.shift_type === '出張' ? 'bg-purple-100 text-purple-800' :
+                    att.shift_type === '休日出張' ? 'bg-purple-50 text-purple-900 border border-purple-200' :
+                    'bg-red-100 text-red-800';
+
+                return `
+                <div class="attendance-card bg-white rounded-xl border border-gray-200 p-3">
+                    <div class="attendance-card-header flex justify-between items-start">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                                <span>${utils.formatDate(att.date)}</span>
+                                <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold ${shiftBadgeClass}">${att.shift_type}</span>
+                            </div>
+                            ${app.currentUser.role === 'admin' ? `<div class="text-[11px] text-gray-500 mt-1">${employeeName}</div>` : ''}
+                            <div class="flex items-center gap-2 mt-2 text-[11px] text-gray-500">
+                                <span class="flex items-center gap-1"><i class="far fa-clock"></i>${att.break_minutes}分休憩</span>
+                                <span class="flex items-center gap-1"><i class="fas fa-exchange-alt"></i>${compensatoryInfo === '-' ? '振替なし' : `振替 ${compensatoryInfo}`}</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1 ml-3">
+                            <button onclick="attendance.editAttendance('${att.id}')" class="px-2 py-1 text-blue-700 hover:text-blue-900 bg-blue-50 rounded-lg text-xs font-semibold" title="編集">
+                                <i class="fas fa-edit text-sm"></i><span class="ml-1">編集</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 mt-3">
+                        <div class="bg-gray-50 rounded-lg p-2">
+                            <div class="attendance-metric-label text-gray-500 flex items-center gap-1"><i class="fas fa-sign-in-alt"></i>出勤</div>
+                            <div class="attendance-metric-value font-semibold text-green-700 mt-1">${utils.formatTime(att.clock_in)}</div>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-2">
+                            <div class="attendance-metric-label text-gray-500 flex items-center gap-1"><i class="fas fa-sign-out-alt"></i>退勤</div>
+                            <div class="attendance-metric-value font-semibold text-red-700 mt-1">${utils.formatTime(att.clock_out)}</div>
+                        </div>
+                    </div>
+                    <div class="mt-2 text-[11px] text-gray-600 flex flex-wrap gap-3">
+                        <span class="flex items-center gap-1"><i class="fas fa-briefcase"></i>勤務 ${att.work_hours}時間</span>
+                        <span class="flex items-center gap-1 ${att.overtime_hours > 0 ? 'text-orange-600' : 'text-gray-500'}"><i class="fas fa-fire-alt"></i>残業 ${att.overtime_hours || 0}時間</span>
+                    </div>
+                    <div class="mt-2 text-[11px] text-gray-600">備考: ${att.note || 'なし'}</div>
+                </div>
+                `;
+            }).join('');
+
+            cardList.innerHTML = cardHtml;
+        }
+
         this.updateMonthlySummary();
         this.checkOvertimeAlert();
     },
@@ -958,7 +1132,11 @@ const attendance = {
     
     updateMonthlySummary() {
         const summaryContent = document.getElementById('monthlySummaryContent');
+        const summaryTitle = document.getElementById('attendanceSummaryTitle');
         const currentMonth = new Date().toISOString().substring(0, 7);
+        const selectedEmployeeId = app.currentUser.role === 'admin'
+            ? document.getElementById('employeeFilter')?.value
+            : app.currentUser.id;
         
         // 現在表示中のデータから集計
         let totalDays = 0;
@@ -983,6 +1161,18 @@ const attendance = {
                 totalCompensatoryHours += leave.substitute_hours || 0;
             }
         });
+
+        if (summaryTitle) {
+            if (selectedEmployeeId) {
+                const employeeName = app.allEmployees.find(e => e.id === selectedEmployeeId)?.name || '従業員';
+                summaryTitle.textContent = `${employeeName}さんの今月のサマリー`;
+            } else if (displayedEmployeeIds.length === 1) {
+                const employeeName = app.allEmployees.find(e => e.id === displayedEmployeeIds[0])?.name || '従業員';
+                summaryTitle.textContent = `${employeeName}さんの今月のサマリー`;
+            } else {
+                summaryTitle.textContent = '今月のサマリー';
+            }
+        }
         
         const html = `
             <div class="bg-white rounded-lg p-3 shadow-sm">
@@ -1053,7 +1243,7 @@ const attendance = {
         const monthInput = document.getElementById('monthFilter');
         const employeeSelect = document.getElementById('employeeFilter');
         const targetMonth = monthInput.value;
-        const selectedEmployeeId = employeeSelect.value;
+        const selectedEmployeeId = employeeSelect.value || (employeeSelect.options[0]?.value || '');
         
         // まず全データから開始
         let filtered = [...app.allAttendance];
@@ -1062,9 +1252,9 @@ const attendance = {
         if (app.currentUser.role !== 'admin') {
             filtered = filtered.filter(att => att.employee_id === app.currentUser.id);
         }
-        
-        // 管理者で従業員が選択されている場合
-        if (app.currentUser.role === 'admin' && selectedEmployeeId) {
+
+        // 管理者は必ず選択した従業員で絞り込み
+        if (app.currentUser.role === 'admin') {
             filtered = filtered.filter(att => att.employee_id === selectedEmployeeId);
         }
         
@@ -1076,7 +1266,7 @@ const attendance = {
         app.filteredAttendance = filtered;
         const monthLabel = targetMonth ? `${targetMonth.split('-')[0]}年${targetMonth.split('-')[1]}月` : '全期間';
         const employeeLabel = app.currentUser.role === 'admin'
-            ? (selectedEmployeeId ? (app.allEmployees.find(e => e.id === selectedEmployeeId)?.name || '選択中の従業員') : '全員')
+            ? (app.allEmployees.find(e => e.id === selectedEmployeeId)?.name || '選択中の従業員')
             : '自分のみ';
         const summary = document.getElementById('attendanceFilterSummary');
         if (summary) {
@@ -1164,14 +1354,15 @@ const attendance = {
     showAddModal() {
         // 従業員セレクトボックスを生成
         const selectElement = document.getElementById('addEmployeeId');
-        
+
         if (app.currentUser.role === 'admin') {
             // 管理者：全従業員を選択可能
-            const options = app.allEmployees.map(emp => 
+            const selectableEmployees = utils.getSelectableEmployees(app.allEmployees);
+            const options = selectableEmployees.map(emp =>
                 `<option value="${emp.id}">${emp.name}</option>`
             ).join('');
             selectElement.innerHTML = '<option value="">選択してください</option>' + options;
-            selectElement.disabled = false;
+            selectElement.disabled = selectableEmployees.length === 0;
         } else {
             // 一般ユーザー：自分のみ選択（固定）
             selectElement.innerHTML = `<option value="${app.currentUser.id}">${app.currentUser.name}</option>`;
@@ -1260,8 +1451,8 @@ const attendance = {
             // 勤怠データを追加
             await api.createAttendance(data);
             
-            // 休日出勤の場合、振替休暇を自動計算して追加
-            if (shiftType === '休日出勤' && workHours > 0) {
+            // 休日出勤の場合、振替休暇を自動計算して追加（休日出張含む）
+            if (['休日出勤', '休日出張'].includes(shiftType) && workHours > 0) {
                 const compensatory = utils.calculateCompensatory(workHours);
                 const compensatoryData = {
                     employee_id: employeeId,
@@ -1284,8 +1475,10 @@ const attendance = {
         }
     },
     
-    async deleteAttendance(id) {
-        if (!confirm('この勤怠データを削除しますか？\nこの操作は取り消せません。')) return;
+    async deleteAttendance(id, options = {}) {
+        const { skipConfirm = false } = options;
+
+        if (!skipConfirm && !confirm('この勤怠データを削除しますか？\nこの操作は取り消せません。')) return;
         
         try {
             // 削除対象の勤怠データを取得
@@ -1295,8 +1488,8 @@ const attendance = {
                 return;
             }
             
-            // 休日出勤の場合、対応する振替休暇も削除
-            if (att.shift_type === '休日出勤') {
+            // 休日出勤の場合、対応する振替休暇も削除（休日出張含む）
+            if (['休日出勤', '休日出張'].includes(att.shift_type)) {
                 await api.deleteCompensatoryLeaveByWorkDate(att.employee_id, att.date);
             }
             
@@ -1308,6 +1501,16 @@ const attendance = {
             console.error('勤怠削除エラー:', error);
             utils.showToast('削除に失敗しました', 'error');
         }
+    },
+
+    async deleteAttendanceFromModal() {
+        const id = document.getElementById('editAttendanceId').value;
+        if (!id) return;
+
+        if (!confirm('この勤怠データを削除しますか？\nこの操作は取り消せません。')) return;
+
+        document.getElementById('attendanceModal').classList.add('hidden');
+        await this.deleteAttendance(id, { skipConfirm: true });
     }
 };
 
@@ -1329,13 +1532,15 @@ const dashboard = {
     
     populateEmployeeFilter() {
         const select = document.getElementById('dashboardEmployeeFilter');
-        
+        const selectableEmployees = utils.getSelectableEmployees(app.allEmployees);
+
         if (app.currentUser.role === 'admin') {
-            // 管理者：全員選択可能
-            const options = app.allEmployees.map(emp => 
+            // 管理者：全員選択可能（管理者アカウントは除外）
+            const options = selectableEmployees.map(emp =>
                 `<option value="${emp.id}">${emp.name}</option>`
             ).join('');
-            select.innerHTML = options;
+            select.innerHTML = options || '<option value="">従業員が登録されていません</option>';
+            select.disabled = selectableEmployees.length === 0;
         } else {
             // 一般ユーザー：自分のみ
             select.innerHTML = `<option value="${app.currentUser.id}">${app.currentUser.name}</option>`;
@@ -1410,9 +1615,6 @@ const dashboard = {
         
         // 残業時間アラート
         this.checkOvertimeAlert(totalOvertimeHours, employeeName);
-        
-        // 最近の勤怠データ表示
-        this.renderRecentAttendance(filteredAttendance);
     },
     
     checkOvertimeAlert(overtimeHours, employeeName) {
@@ -1425,47 +1627,6 @@ const dashboard = {
         } else {
             alertDiv.classList.add('hidden');
         }
-    },
-    
-    renderRecentAttendance(attendanceData) {
-        const tbody = document.getElementById('dashboardRecentAttendance');
-        const noDataMsg = document.getElementById('dashboardNoData');
-        
-        // 日付降順でソート（最新10件）
-        const recentData = attendanceData
-            .sort((a, b) => b.date.localeCompare(a.date))
-            .slice(0, 10);
-        
-        if (recentData.length === 0) {
-            tbody.innerHTML = '';
-            noDataMsg.classList.remove('hidden');
-            return;
-        }
-        
-        noDataMsg.classList.add('hidden');
-        
-        const html = recentData.map(att => {
-            const shortDate = att.date.split('-').slice(1).join('/');
-            return `
-            <tr class="hover:bg-gray-50">
-                <td class="px-3 py-2 text-xs">${shortDate}</td>
-                <td class="px-3 py-2 text-xs">
-                    <span class="px-2 py-1 rounded text-xs font-medium ${
-                        att.shift_type === '早番' ? 'bg-yellow-100 text-yellow-800' : 
-                        att.shift_type === '遅番' ? 'bg-blue-100 text-blue-800' : 
-                        'bg-red-100 text-red-800'
-                    }">
-                        ${att.shift_type}
-                    </span>
-                </td>
-                <td class="px-3 py-2 text-xs text-green-600 font-medium">${utils.formatTime(att.clock_in)}</td>
-                <td class="px-3 py-2 text-xs text-red-600 font-medium">${utils.formatTime(att.clock_out)}</td>
-                <td class="px-3 py-2 text-xs font-bold">${att.work_hours || 0}h</td>
-                <td class="px-3 py-2 text-xs font-bold ${att.overtime_hours > 0 ? 'text-orange-600' : 'text-gray-400'}">${att.overtime_hours || 0}h</td>
-            </tr>
-        `}).join('');
-        
-        tbody.innerHTML = html;
     }
 };
 
@@ -1539,24 +1700,34 @@ const compensatoryManagement = {
         // 管理者の場合、従業員フィルターを表示
         const filterContainer = document.getElementById('compensatoryFilterContainer');
         const nameHeader = document.getElementById('compensatoryNameHeader');
-        
+        const employeeFilterWrapper = document.getElementById('compensatoryEmployeeFilterWrapper');
+        const statusFilter = document.getElementById('compensatoryStatusFilter');
+
+        if (statusFilter) {
+            statusFilter.value = app.currentUser.role === 'admin' ? 'all' : 'unused';
+        }
+
         if (app.currentUser.role === 'admin') {
             if (filterContainer) filterContainer.classList.remove('hidden');
+            if (employeeFilterWrapper) employeeFilterWrapper.classList.remove('hidden');
             if (nameHeader) nameHeader.style.display = '';
             this.renderEmployeeFilter();
         } else {
-            if (filterContainer) filterContainer.classList.add('hidden');
+            if (filterContainer) filterContainer.classList.remove('hidden');
+            if (employeeFilterWrapper) employeeFilterWrapper.classList.add('hidden');
             if (nameHeader) nameHeader.style.display = 'none';
         }
-        
-        this.renderTable();
+
+        const selectedStatus = statusFilter ? statusFilter.value : 'all';
+        this.renderTable(null, selectedStatus);
     },
     
     renderEmployeeFilter() {
         const filterSelect = document.getElementById('compensatoryEmployeeFilter');
-        const activeEmployees = app.allEmployees.filter(e => e.status === 'active');
-        
-        const options = activeEmployees.map(emp => 
+        const activeEmployees = utils.getSelectableEmployees(app.allEmployees)
+            .filter(e => e.status === 'active');
+
+        const options = activeEmployees.map(emp =>
             `<option value="${emp.id}">${emp.name}</option>`
         ).join('');
         
@@ -1565,20 +1736,16 @@ const compensatoryManagement = {
     
     filterCompensatory() {
         const selectedEmployeeId = document.getElementById('compensatoryEmployeeFilter').value;
-        
-        if (!selectedEmployeeId) {
-            // 全員表示
-            this.renderTable();
-        } else {
-            // 特定の従業員のみ表示
-            this.renderTable(selectedEmployeeId);
-        }
+        const selectedStatus = document.getElementById('compensatoryStatusFilter').value;
+
+        this.renderTable(selectedEmployeeId || null, selectedStatus || 'all');
     },
-    
-    renderTable(filterEmployeeId = null) {
+
+    renderTable(filterEmployeeId = null, statusFilter = 'all') {
         const tbody = document.getElementById('compensatoryTableBody');
+        const cardList = document.getElementById('compensatoryCardList');
         const noDataMsg = document.getElementById('noCompensatoryMessage');
-        
+
         // フィルタリング
         let leavesToDisplay = app.compensatoryLeaves;
         if (filterEmployeeId) {
@@ -1586,24 +1753,32 @@ const compensatoryManagement = {
                 leave => leave.employee_id === filterEmployeeId
             );
         }
+
+        if (statusFilter === 'unused') {
+            leavesToDisplay = leavesToDisplay.filter(leave => !leave.used);
+        } else if (statusFilter === 'used') {
+            leavesToDisplay = leavesToDisplay.filter(leave => leave.used);
+        }
         
         if (leavesToDisplay.length === 0) {
             tbody.innerHTML = '';
+            if (cardList) cardList.innerHTML = '';
             noDataMsg.classList.remove('hidden');
             return;
         }
-        
+
         noDataMsg.classList.add('hidden');
         
         const html = leavesToDisplay.map(leave => {
             const employee = app.allEmployees.find(e => e.id === leave.employee_id);
             const employeeName = employee ? employee.name : '不明';
-            
+            const isAdmin = app.currentUser.role === 'admin';
+
             // 対応する勤怠データから出退勤時刻を取得
-            const attendance = app.allAttendance.find(att => 
-                att.employee_id === leave.employee_id && 
-                att.date === leave.work_date && 
-                att.shift_type === '休日出勤'
+            const attendance = app.allAttendance.find(att =>
+                att.employee_id === leave.employee_id &&
+                att.date === leave.work_date &&
+                ['休日出勤', '休日出張'].includes(att.shift_type)
             );
             
             const clockIn = attendance ? utils.formatTime(attendance.clock_in) : '-';
@@ -1621,31 +1796,35 @@ const compensatoryManagement = {
                 : '<span class="px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">未使用</span>';
             
             // 名前列は管理者のみ表示
-            const nameColumn = app.currentUser.role === 'admin' 
+            const nameColumn = app.currentUser.role === 'admin'
                 ? `<td class="px-3 py-3 text-xs font-medium whitespace-nowrap">${employeeName}</td>`
                 : '';
-            
-            return `
-            <tr class="hover:bg-gray-50">
-                <td class="px-2 py-2 text-xs sticky-col-left" style="position: sticky; left: 0; z-index: 5; background-color: white; min-width: 50px;">
-                    <div class="flex gap-0.5 justify-center">
-                        <button onclick="compensatoryManagement.toggleUsed('${leave.id}', ${!leave.used})" 
+
+            const actionContent = isAdmin
+                ? '<span class="text-[11px] text-gray-500">閲覧のみ</span>'
+                : `<div class="flex gap-0.5 justify-center">
+                        <button onclick="compensatoryManagement.toggleUsed('${leave.id}', ${!leave.used})"
                                 class="px-2 py-1 rounded text-xs font-bold transition ${
-                                    leave.used 
-                                        ? 'bg-green-500 hover:bg-green-600 text-white' 
+                                    leave.used
+                                        ? 'bg-green-500 hover:bg-green-600 text-white'
                                         : 'bg-gray-500 hover:bg-gray-600 text-white'
                                 }"
                                 title="${leave.used ? '未使用に戻す' : '使用済にする'}">
                             ${leave.used ? '未' : '済'}
                         </button>
                         ${leave.used ? `
-                        <button onclick="compensatoryManagement.saveUsedDate('${leave.id}')" 
+                        <button onclick="compensatoryManagement.saveUsedDate('${leave.id}')"
                                 class="px-1.5 py-1 rounded text-xs font-medium transition bg-blue-500 hover:bg-blue-600 text-white"
                                 title="使用日を保存">
                             <i class="fas fa-save text-xs"></i>
                         </button>
                         ` : ''}
-                    </div>
+                    </div>`;
+
+            return `
+            <tr class="hover:bg-gray-50">
+                <td class="px-2 py-2 text-xs sticky-col-left" style="position: sticky; left: 0; z-index: 5; background-color: white; min-width: 50px;">
+                    ${actionContent}
                 </td>
                 ${nameColumn}
                 <td class="px-3 py-3 text-xs whitespace-nowrap">${utils.formatDate(leave.work_date)}</td>
@@ -1654,20 +1833,90 @@ const compensatoryManagement = {
                 <td class="px-3 py-3 text-xs font-bold whitespace-nowrap">${leave.work_hours}時間</td>
                 <td class="px-3 py-3 text-xs font-medium text-red-600 whitespace-nowrap">${substituteInfo}</td>
                 <td class="px-3 py-3 text-xs">
-                    <input type="date" 
-                           id="usedDate_${leave.id}" 
-                           value="${leave.used_date || ''}" 
+                    <input type="date"
+                           id="usedDate_${leave.id}"
+                           value="${leave.used_date || ''}"
                            class="px-2 py-1 border border-gray-300 rounded text-xs w-32"
-                           ${!leave.used ? 'disabled' : ''}>
+                           ${(!leave.used || isAdmin) ? 'disabled' : ''}>
                 </td>
                 <td class="px-3 py-3 text-xs whitespace-nowrap">${statusBadge}</td>
             </tr>
         `}).join('');
         
         tbody.innerHTML = html;
+
+        if (cardList) {
+            const cardHtml = leavesToDisplay.map(leave => {
+                const employee = app.allEmployees.find(e => e.id === leave.employee_id);
+                const employeeName = employee ? employee.name : '不明';
+                const isAdmin = app.currentUser.role === 'admin';
+
+                const attendance = app.allAttendance.find(att =>
+                    att.employee_id === leave.employee_id &&
+                    att.date === leave.work_date &&
+                    ['休日出勤', '休日出張'].includes(att.shift_type)
+                );
+
+                const clockIn = attendance ? utils.formatTime(attendance.clock_in) : '-';
+                const clockOut = attendance ? utils.formatTime(attendance.clock_out) : '-';
+
+                const substituteInfo = leave.substitute_days > 0
+                    ? `${leave.substitute_days}日`
+                    : `${leave.substitute_hours}時間`;
+
+                const statusBadge = leave.used
+                    ? '<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-800">使用済</span>'
+                    : '<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-800">未使用</span>';
+
+                return `
+                <div class="bg-white rounded-xl border border-gray-200 p-3 flex flex-col gap-2">
+                    <div class="flex items-start gap-2">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                                <span>${utils.formatDate(leave.work_date)}</span>
+                                ${statusBadge}
+                            </div>
+                            ${app.currentUser.role === 'admin' ? `<div class="text-[11px] text-gray-500 mt-1">${employeeName}</div>` : ''}
+                            <div class="mt-2 text-[11px] text-gray-600 flex flex-wrap gap-2">
+                                <span class="flex items-center gap-1"><i class="far fa-clock"></i>${clockIn} - ${clockOut}</span>
+                                <span class="flex items-center gap-1"><i class="fas fa-briefcase"></i>${leave.work_hours}時間</span>
+                                <span class="flex items-center gap-1 text-red-600"><i class="fas fa-exchange-alt"></i>${substituteInfo}</span>
+                            </div>
+                        </div>
+                        ${isAdmin ? '<span class="text-[11px] text-gray-500">閲覧のみ</span>' : `
+                        <button onclick="compensatoryManagement.toggleUsed('${leave.id}', ${!leave.used})"
+                                class="px-2 py-1 text-xs font-semibold rounded-lg ${leave.used ? 'bg-gray-700 text-white hover:bg-gray-800' : 'bg-green-600 text-white hover:bg-green-700'}" title="状態切替">
+                            ${leave.used ? '未使用に戻す' : '使用済にする'}
+                        </button>
+                        `}
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        ${leave.used && !isAdmin ? `
+                        <div class="flex items-center gap-2">
+                            <input type="date"
+                                   id="usedDate_${leave.id}"
+                                   value="${leave.used_date || ''}"
+                                   class="flex-1 px-2 py-2 border border-gray-300 rounded text-xs">
+                            <button onclick="compensatoryManagement.saveUsedDate('${leave.id}')"
+                                    class="px-3 py-2 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1">
+                                <i class="fas fa-save"></i><span>保存</span>
+                            </button>
+                        </div>
+                        ` : `<div class="text-[11px] text-gray-500">${isAdmin ? '操作権限がありません。' : '使用日を入力するには「使用済」に変更してください。'}</div>`}
+                    </div>
+                </div>
+                `;
+            }).join('');
+
+            cardList.innerHTML = cardHtml;
+        }
     },
-    
+
     async toggleUsed(leaveId, newUsedStatus) {
+        if (app.currentUser.role === 'admin') {
+            utils.showToast('管理者は操作できません', 'info');
+            return;
+        }
         try {
             const leave = app.compensatoryLeaves.find(l => l.id === leaveId);
             if (!leave) return;
@@ -1710,10 +1959,15 @@ const compensatoryManagement = {
     hideUsedDateModal() {
         document.getElementById('usedDateModal').classList.add('hidden');
     },
-    
+
     async submitUsedDate(event) {
         event.preventDefault();
-        
+
+        if (app.currentUser.role === 'admin') {
+            utils.showToast('管理者は操作できません', 'info');
+            return;
+        }
+
         const leaveId = document.getElementById('selectedLeaveId').value;
         const usedDate = document.getElementById('selectedUsedDate').value;
         
@@ -1739,6 +1993,10 @@ const compensatoryManagement = {
     },
     
     async saveUsedDate(leaveId) {
+        if (app.currentUser.role === 'admin') {
+            utils.showToast('管理者は操作できません', 'info');
+            return;
+        }
         try {
             const usedDateInput = document.getElementById(`usedDate_${leaveId}`);
             const usedDate = usedDateInput.value;
@@ -1766,30 +2024,48 @@ const compensatoryManagement = {
 const exportData = {
     loadEmployeeCheckboxes() {
         const container = document.getElementById('employeeCheckboxList');
-        const activeEmployees = app.allEmployees.filter(e => e.status === 'active');
-        
-        const html = activeEmployees.map(emp => `
-            <label class="flex items-center cursor-pointer hover:bg-gray-50 p-2 rounded">
-                <input type="checkbox" class="employee-checkbox w-4 h-4 text-tsunagu-blue border-gray-300 rounded focus:ring-tsunagu-blue mr-2" 
-                       value="${emp.id}" checked>
-                <span class="text-sm md:text-base">${emp.name}</span>
-            </label>
-        `).join('');
-        
-        container.innerHTML = html;
-        
-        // 全員選択チェックボックスのイベント
-        document.getElementById('selectAllEmployees').addEventListener('change', (e) => {
-            const checkboxes = document.querySelectorAll('.employee-checkbox');
-            checkboxes.forEach(cb => cb.checked = e.target.checked);
-        });
-        
-        // 個別チェックボックスの変更で全員選択の状態を更新
-        container.addEventListener('change', () => {
-            const checkboxes = document.querySelectorAll('.employee-checkbox');
-            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-            document.getElementById('selectAllEmployees').checked = allChecked;
-        });
+        const activeEmployees = utils.getSelectableEmployees(app.allEmployees)
+            .filter(e => e.status === 'active');
+        const selectAllWrapper = document.getElementById('selectAllEmployees')?.closest('div');
+
+        if (app.currentUser.role === 'admin') {
+            const html = activeEmployees.map(emp => `
+                <label class="flex items-center cursor-pointer hover:bg-gray-50 p-2 rounded">
+                    <input type="checkbox" class="employee-checkbox w-4 h-4 text-tsunagu-blue border-gray-300 rounded focus:ring-tsunagu-blue mr-2"
+                           value="${emp.id}" checked>
+                    <span class="text-sm md:text-base">${emp.name}</span>
+                </label>
+            `).join('');
+
+            container.innerHTML = html;
+
+            if (selectAllWrapper) selectAllWrapper.classList.remove('hidden');
+
+            // 全員選択チェックボックスのイベント
+            document.getElementById('selectAllEmployees').addEventListener('change', (e) => {
+                const checkboxes = document.querySelectorAll('.employee-checkbox');
+                checkboxes.forEach(cb => cb.checked = e.target.checked);
+            });
+
+            // 個別チェックボックスの変更で全員選択の状態を更新
+            container.addEventListener('change', () => {
+                const checkboxes = document.querySelectorAll('.employee-checkbox');
+                const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+                document.getElementById('selectAllEmployees').checked = allChecked;
+            });
+        } else {
+            const self = activeEmployees.find(emp => emp.id === app.currentUser.id);
+            const html = self ? `
+                <label class="flex items-center p-2 rounded bg-gray-50">
+                    <input type="checkbox" class="employee-checkbox w-4 h-4 text-tsunagu-blue border-gray-300 rounded focus:ring-tsunagu-blue mr-2"
+                           value="${self.id}" checked disabled>
+                    <span class="text-sm md:text-base">${self.name}（自分のみ）</span>
+                </label>
+            ` : '<p class="text-sm text-gray-500">有効な従業員データがありません</p>';
+
+            container.innerHTML = html;
+            if (selectAllWrapper) selectAllWrapper.classList.add('hidden');
+        }
     },
     
     async exportCSV() {
@@ -1801,9 +2077,13 @@ const exportData = {
             return;
         }
         
-        // 選択された従業員IDを取得
-        const selectedEmployeeIds = Array.from(document.querySelectorAll('.employee-checkbox:checked'))
+        // 選択された従業員IDを取得（一般従業員は自分のみ固定）
+        let selectedEmployeeIds = Array.from(document.querySelectorAll('.employee-checkbox:checked'))
             .map(cb => cb.value);
+
+        if (app.currentUser.role !== 'admin') {
+            selectedEmployeeIds = [app.currentUser.id.toString()];
+        }
         
         if (selectedEmployeeIds.length === 0) {
             utils.showToast('従業員を1人以上選択してください', 'error');
@@ -1826,7 +2106,7 @@ const exportData = {
         const headers = ['日付', '氏名', 'シフト', '出勤時刻', '退勤時刻', '休憩時間(分)', '勤務時間(時間)', '残業時間(時間)', '振替', '備考'];
         const rows = filtered.map(att => {
             let compInfo = '';
-            if (att.shift_type === '休日出勤' && att.work_hours > 0) {
+            if (['休日出勤', '休日出張'].includes(att.shift_type) && att.work_hours > 0) {
                 const comp = utils.calculateCompensatory(att.work_hours);
                 compInfo = comp.days > 0 ? `${comp.days}日` : `${comp.hours}時間`;
             }
@@ -1982,20 +2262,45 @@ const employees = {
 
 // 有給休暇管理
 const paidLeave = {
+    sortRequestsByNewest(a, b) {
+        const requestDateDiff = new Date(b.request_date) - new Date(a.request_date);
+        if (requestDateDiff !== 0) return requestDateDiff;
+
+        if (a.created_at || b.created_at) {
+            const createdDiff = new Date(b.created_at || b.request_date) - new Date(a.created_at || a.request_date);
+            if (createdDiff !== 0) return createdDiff;
+        }
+
+        return (b.leave_date || '').localeCompare(a.leave_date || '');
+    },
+
     async loadPaidLeave() {
         app.allEmployees = await api.getEmployees();
         const paidLeaves = await api.getPaidLeaves();
         const leaveRequests = await api.getLeaveRequests();
-        
+
         // 一般ユーザーの場合は自分のデータのみにフィルタリング
         if (app.currentUser.role !== 'admin') {
             app.paidLeaves = paidLeaves.filter(pl => pl.employee_id === app.currentUser.id);
-            app.leaveRequests = leaveRequests.filter(lr => lr.employee_id === app.currentUser.id);
+            app.leaveRequests = leaveRequests
+                .filter(lr => lr.employee_id === app.currentUser.id)
+                .sort(this.sortRequestsByNewest);
         } else {
             app.paidLeaves = paidLeaves;
-            app.leaveRequests = leaveRequests;
+            app.leaveRequests = [...leaveRequests].sort(this.sortRequestsByNewest);
         }
-        
+
+        // 管理者はサマリーカードと申請フォームを非表示
+        const summarySection = document.getElementById('paidLeaveSummarySection');
+        const requestFormCard = document.getElementById('leaveRequestFormCard');
+        if (app.currentUser.role === 'admin') {
+            summarySection?.classList.add('hidden');
+            requestFormCard?.classList.add('hidden');
+        } else {
+            summarySection?.classList.remove('hidden');
+            requestFormCard?.classList.remove('hidden');
+        }
+
         this.updateSummary();
         this.renderRequests();
     },
@@ -2023,6 +2328,7 @@ const paidLeave = {
     
     renderRequests() {
         const tbody = document.getElementById('leaveRequestTableBody');
+        const cardList = document.getElementById('leaveRequestCardList');
         const noDataMsg = document.getElementById('noLeaveRequestMessage');
         const statusFilter = document.getElementById('leaveStatusFilter').value;
         
@@ -2040,12 +2346,16 @@ const paidLeave = {
         
         if (filteredRequests.length === 0) {
             tbody.innerHTML = '';
+            if (cardList) cardList.innerHTML = '';
             noDataMsg.classList.remove('hidden');
             return;
         }
-        
+
         noDataMsg.classList.add('hidden');
-        
+
+        // 並び順を新しい申請日順で固定
+        const sortedRequests = [...filteredRequests].sort(this.sortRequestsByNewest);
+
         // 管理者かどうかで表示制御
         const isAdmin = app.currentUser.role === 'admin';
         const nameHeader = document.getElementById('leaveRequestNameHeader');
@@ -2060,10 +2370,10 @@ const paidLeave = {
             actionHeader.style.display = '';
         }
         
-        const html = filteredRequests.map(request => {
+        const html = sortedRequests.map(request => {
             const employee = app.allEmployees.find(e => e.id === request.employee_id);
             const employeeName = employee ? employee.name : '不明';
-            
+
             const statusBadge = {
                 'pending': '<span class="px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">承認待ち</span>',
                 'approved': '<span class="px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">承認済み</span>',
@@ -2132,6 +2442,53 @@ const paidLeave = {
         `}).join('');
         
         tbody.innerHTML = html;
+
+        if (cardList) {
+            const cardHtml = sortedRequests.map(request => {
+                const employee = app.allEmployees.find(e => e.id === request.employee_id);
+                const employeeName = employee ? employee.name : '不明';
+
+                const statusBadge = {
+                    'pending': '<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-yellow-100 text-yellow-800">承認待ち</span>',
+                    'approved': '<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-800">承認済み</span>',
+                    'rejected': '<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-800">却下</span>'
+                }[request.status] || '-';
+
+                let actionButton = '';
+                if (isAdmin) {
+                    if (request.status === 'pending') {
+                        actionButton = `<button onclick=\"paidLeave.approveRequest('${request.id}')\" class=\"px-3 py-2 text-xs font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 flex items-center gap-1\"><i class=\"fas fa-check\"></i><span>承認</span></button>`;
+                    } else if (request.status === 'approved') {
+                        actionButton = `<button onclick=\"paidLeave.cancelApproval('${request.id}')\" class=\"px-3 py-2 text-xs font-semibold rounded-lg bg-orange-500 text-white hover:bg-orange-600 flex items-center gap-1\"><i class=\"fas fa-undo\"></i><span>取消</span></button>`;
+                    }
+                } else if (request.status === 'pending') {
+                    actionButton = `<button onclick=\"paidLeave.cancelRequest('${request.id}')\" class=\"px-3 py-2 text-xs font-semibold rounded-lg bg-red-500 text-white hover:bg-red-600 flex items-center gap-1\"><i class=\"fas fa-times\"></i><span>取消</span></button>`;
+                }
+
+                return `
+                <div class="bg-white rounded-xl border border-gray-200 p-3 flex flex-col gap-2">
+                    <div class="flex items-start gap-2">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                                <span>${utils.formatDate(request.leave_date)}</span>
+                                ${statusBadge}
+                            </div>
+                            ${isAdmin ? `<div class="text-[11px] text-gray-500 mt-1">${employeeName}</div>` : ''}
+                            <div class="mt-2 text-[11px] text-gray-600 flex flex-wrap gap-2">
+                                <span class="flex items-center gap-1"><i class="fas fa-file-alt"></i>${utils.formatDate(request.request_date)} 申請</span>
+                                <span class="flex items-center gap-1"><i class="fas fa-sun"></i>${request.leave_type}</span>
+                                <span class="flex items-center gap-1"><i class="fas fa-umbrella-beach"></i>${request.leave_days}日</span>
+                            </div>
+                        </div>
+                        ${actionButton ? `<div class="shrink-0">${actionButton}</div>` : ''}
+                    </div>
+                    <div class="text-[11px] text-gray-600">理由: ${request.reason || 'なし'}</div>
+                </div>
+                `;
+            }).join('');
+
+            cardList.innerHTML = cardHtml;
+        }
     },
     
     async submitRequest(event) {
@@ -2306,21 +2663,31 @@ async function init() {
     if (auth.checkAuth()) {
         showScreen('main');
         document.getElementById('currentUserName').textContent = app.currentUser.name;
-        
+        const mobileUserName = document.getElementById('currentUserNameMobile');
+        if (mobileUserName) mobileUserName.textContent = app.currentUser.name;
+
         // 管理者の場合は従業員管理タブを表示
         if (app.currentUser.role === 'admin') {
             document.getElementById('employeeManageBtn').classList.remove('hidden');
+
+            // 管理者は打刻タブを非表示
+            document.getElementById('clockNavBtn')?.classList.add('hidden');
+            document.getElementById('clockView')?.classList.add('hidden');
+
         }
-        
+
         // 時計開始
         updateClock();
         setInterval(updateClock, 1000);
-        
-        // 今日の勤怠読み込み
-        await clock.loadTodayAttendance();
-        
-        // 初期表示は打刻画面
-        showView('clock');
+
+        // 役割に応じた初期データ読み込み
+        if (app.currentUser.role !== 'admin') {
+            await clock.loadTodayAttendance();
+            showView('clock');
+        } else {
+            await dashboard.loadDashboard();
+            showView('dashboard');
+        }
     } else {
         showScreen('login');
     }
@@ -2329,6 +2696,7 @@ async function init() {
 // イベントリスナー
 document.addEventListener('DOMContentLoaded', () => {
     loginAssistant.init();
+    shiftSelection.init();
     init();
     
     // PWAモード検知とリロードボタン表示
@@ -2408,13 +2776,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // 打刻ボタン
-    document.getElementById('clockInBtn').addEventListener('click', () => clockConfirm.open('clockIn'));
-    document.getElementById('clockOutBtn').addEventListener('click', () => clockConfirm.open('clockOut'));
+    document.getElementById('clockInBtn').addEventListener('click', () => clock.clockIn());
+    document.getElementById('clockOutBtn').addEventListener('click', () => clock.clockOut());
     document.getElementById('resetClockBtn').addEventListener('click', () => clock.resetClock());
-
-    document.getElementById('confirmClockAction').addEventListener('click', () => clockConfirm.confirm());
-    document.getElementById('cancelClockAction').addEventListener('click', () => clockConfirm.close());
-    document.getElementById('closeClockConfirm').addEventListener('click', () => clockConfirm.close());
     
     // ダッシュボードフィルター
     document.getElementById('dashboardFilterBtn').addEventListener('click', () => dashboard.updateDashboard());
@@ -2423,6 +2787,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 勤怠フィルター
     document.getElementById('filterBtn').addEventListener('click', () => attendance.filterByMonth());
+    document.getElementById('employeeFilter').addEventListener('change', () => attendance.filterByMonth());
+    document.getElementById('monthFilter').addEventListener('change', () => attendance.filterByMonth());
     
     // 振替休暇フィルター
     document.getElementById('compensatoryFilterBtn').addEventListener('click', () => compensatoryManagement.filterCompensatory());
@@ -2439,6 +2805,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('cancelAttendanceBtn').addEventListener('click', () => {
         document.getElementById('attendanceModal').classList.add('hidden');
     });
+    document.getElementById('deleteAttendanceBtn').addEventListener('click', () => attendance.deleteAttendanceFromModal());
     document.getElementById('attendanceEditForm').addEventListener('submit', (e) => attendance.saveAttendance(e));
     
     // 勤怠新規追加

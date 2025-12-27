@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>出退勤管理システム - つなぐいわてまち</title>
+    <title>出退勤管理 - つなぐいわてまち</title>
     
     <!-- PWA設定 -->
     <link rel="manifest" href="/manifest.json">
@@ -128,6 +128,47 @@
         #pullToRefresh {
             transition: height 0.3s ease, opacity 0.3s ease;
         }
+        /* 時計&残業カード調整 */
+        .clock-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            align-items: stretch;
+        }
+        .clock-card-title {
+            line-height: 1.2;
+        }
+        .clock-card-subtext {
+            line-height: 1.4;
+        }
+        @media (max-width: 480px) {
+            .clock-grid {
+                gap: 0.6rem;
+            }
+            .clock-card-title {
+                font-size: 0.7rem !important;
+            }
+            .clock-card-value {
+                font-size: 1.5rem !important;
+            }
+        .clock-card-subtext {
+            font-size: 0.7rem !important;
+        }
+        }
+        /* 勤怠一覧カード（モバイル） */
+        .attendance-card {
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+        }
+        .attendance-metric-label {
+            font-size: 0.72rem;
+        }
+        .attendance-metric-value {
+            font-size: 1rem;
+            line-height: 1.4;
+        }
+        @media (max-width: 768px) {
+            .attendance-card-header {
+                gap: 0.75rem;
+            }
+        }
     </style>
 </head>
 <body class="bg-gray-50">
@@ -144,7 +185,7 @@
         <div class="bg-white rounded-2xl shadow-2xl p-6 md:p-8 w-full max-w-md">
             <div class="text-center mb-6 md:mb-8">
                 <img src="images/sitelogo.png" alt="つなぐいわてまち" class="mx-auto mb-4 md:mb-6 w-48 md:w-64">
-                <h1 class="text-xl md:text-2xl font-bold text-gray-800 mb-2">出退勤管理システム</h1>
+                <h1 class="text-xl md:text-2xl font-bold text-gray-800 mb-2">出退勤管理</h1>
                 <p class="text-sm md:text-base text-gray-600">社員番号を入力してログインしてください</p>
             </div>
             
@@ -194,26 +235,30 @@
     <div id="mainApp" class="hidden min-h-screen">
         <!-- ヘッダー -->
         <header class="gradient-bg text-white shadow-lg">
-            <div class="container mx-auto px-4 py-3">
-                <div class="flex items-center justify-between flex-wrap gap-3">
-                    <div class="flex items-center space-x-3">
-                        <img src="images/sitelogo.png" alt="つなぐいわてまち" class="h-10 md:h-12 bg-white rounded px-2">
-                        <div>
-                            <h1 class="text-base md:text-xl font-bold">出退勤管理システム</h1>
-                            <p class="text-xs md:text-sm opacity-90">
-                                <i class="fas fa-user-circle mr-1"></i>
+            <div class="container mx-auto px-3 py-2 md:px-4 md:py-3">
+                <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <img src="images/pwa-icon.png" alt="つなぐいわてまち" class="h-10 w-10 md:h-12 md:w-12 bg-white rounded-lg p-1">
+                        <div class="leading-tight">
+                            <h1 class="text-base md:text-xl font-bold">出退勤管理</h1>
+                            <p class="hidden sm:flex items-center text-xs md:text-sm opacity-90 gap-1">
+                                <i class="fas fa-user-circle"></i>
                                 <span id="currentUserName"></span>
                             </p>
                         </div>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <button id="reloadBtn" class="bg-white/20 hover:bg-white/30 px-3 py-2 md:px-4 rounded-lg transition text-sm md:text-base hidden">
+                    <div class="flex items-center gap-2 text-xs sm:text-sm">
+                        <div class="flex items-center gap-1 bg-white/20 px-2 py-1 rounded-lg sm:hidden">
+                            <i class="fas fa-user-circle"></i>
+                            <span id="currentUserNameMobile" class="font-medium"></span>
+                        </div>
+                        <button id="reloadBtn" class="hidden sm:inline-flex items-center bg-white/20 hover:bg-white/30 px-3 py-2 md:px-4 rounded-lg transition text-sm md:text-base">
                             <i class="fas fa-sync-alt"></i>
-                            <span class="hidden sm:inline ml-2">更新</span>
+                            <span class="hidden md:inline ml-2">更新</span>
                         </button>
-                        <button id="logoutBtn" class="bg-white/20 hover:bg-white/30 px-3 py-2 md:px-4 rounded-lg transition text-sm md:text-base">
+                        <button id="logoutBtn" class="inline-flex items-center bg-white/20 hover:bg-white/30 p-2 md:p-2.5 rounded-lg transition text-xs sm:text-base" aria-label="ログアウト">
                             <i class="fas fa-sign-out-alt"></i>
-                            <span class="hidden sm:inline ml-2">ログアウト</span>
+                            <span class="sr-only">ログアウト</span>
                         </button>
                     </div>
                 </div>
@@ -224,7 +269,7 @@
         <nav class="bg-white shadow-md">
             <div class="container mx-auto px-4">
                 <div class="flex space-x-1 overflow-x-auto nav-scroll">
-                    <button class="nav-btn active px-4 md:px-6 py-3 font-medium transition border-b-2 whitespace-nowrap text-sm md:text-base flex-shrink-0" data-view="clock">
+                    <button id="clockNavBtn" class="nav-btn active px-4 md:px-6 py-3 font-medium transition border-b-2 whitespace-nowrap text-sm md:text-base flex-shrink-0" data-view="clock">
                         <i class="fas fa-clock mr-1 md:mr-2"></i><span>打刻</span>
                     </button>
                     <button class="nav-btn px-4 md:px-6 py-3 font-medium transition border-b-2 whitespace-nowrap text-sm md:text-base flex-shrink-0" data-view="dashboard">
@@ -239,7 +284,7 @@
                     <button class="nav-btn px-4 md:px-6 py-3 font-medium transition border-b-2 whitespace-nowrap text-sm md:text-base flex-shrink-0" data-view="paidleave">
                         <i class="fas fa-umbrella-beach mr-1 md:mr-2"></i><span>有給休暇</span>
                     </button>
-                    <button class="nav-btn px-4 md:px-6 py-3 font-medium transition border-b-2 whitespace-nowrap text-sm md:text-base flex-shrink-0" data-view="export">
+                    <button id="exportNavBtn" class="nav-btn px-4 md:px-6 py-3 font-medium transition border-b-2 whitespace-nowrap text-sm md:text-base flex-shrink-0" data-view="export">
                         <i class="fas fa-download mr-1 md:mr-2"></i><span>データ出力</span>
                     </button>
                     <button id="employeeManageBtn" class="nav-btn px-4 md:px-6 py-3 font-medium transition border-b-2 hidden whitespace-nowrap text-sm md:text-base flex-shrink-0" data-view="employees">
@@ -254,20 +299,32 @@
             <!-- 打刻ビュー -->
             <div id="clockView" class="view-content">
                 <div class="max-w-2xl mx-auto">
-                    <!-- 現在時刻表示 -->
-                    <div class="bg-white rounded-xl shadow-lg p-6 md:p-8 mb-4 md:mb-6 text-center compact-card">
-                        <div class="text-gray-600 mb-2 text-sm md:text-base">現在時刻</div>
-                        <div id="currentTime" class="text-3xl md:text-5xl font-bold text-gray-800 mb-2"></div>
-                        <div id="currentDate" class="text-base md:text-xl text-gray-600"></div>
+                    <!-- 現在時刻＆今月の残業 -->
+                    <div class="clock-grid grid grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
+                        <div class="bg-white rounded-xl shadow-lg p-4 md:p-5 text-center compact-card min-w-0">
+                            <div class="text-gray-600 mb-1 text-xs md:text-sm tracking-wide clock-card-title">現在時刻</div>
+                            <div id="currentTime" class="text-2xl md:text-4xl font-bold text-gray-800 mb-1 clock-card-value"></div>
+                            <div id="currentDate" class="text-sm md:text-lg text-gray-600 clock-card-subtext"></div>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-lg p-4 md:p-5 compact-card min-w-0">
+                            <div class="flex items-center justify-between gap-2 flex-wrap text-xs md:text-sm text-gray-600 mb-1 clock-card-title">
+                                <span class="flex items-center gap-2"><i class="fas fa-business-time text-orange-500"></i>今月の残業</span>
+                                <span id="monthlyOvertimeRange" class="text-[11px] md:text-xs text-gray-500 clock-card-subtext"></span>
+                            </div>
+                            <div class="flex items-baseline gap-2 flex-wrap leading-tight">
+                                <div id="monthlyOvertimeValue" class="text-2xl md:text-3xl font-bold text-orange-600 clock-card-value">--時間</div>
+                                <p class="text-[11px] md:text-xs text-gray-500 clock-card-subtext">当月の退勤済みデータから集計</p>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- 今日の勤務状況 -->
-                    <div id="todayStatus" class="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-4 md:mb-6 compact-card">
-                        <h2 class="text-lg md:text-xl font-bold text-gray-800 mb-4 compact-header">
+                    <div id="todayStatus" class="bg-white rounded-xl shadow-lg p-3 md:p-4 mb-4 md:mb-6 compact-card">
+                        <h2 class="text-base md:text-lg font-bold text-gray-800 mb-3 compact-header">
                             <i class="fas fa-calendar-day text-tsunagu-blue mr-2"></i>本日の勤務状況
                         </h2>
-                        <div id="todayStatusContent" class="space-y-3">
-                            <p class="text-gray-600 text-sm md:text-base">まだ出勤していません</p>
+                        <div id="todayStatusContent" class="space-y-2">
+                            <p class="text-gray-600 text-sm">まだ出勤していません</p>
                         </div>
                     </div>
 
@@ -276,9 +333,9 @@
                         <label class="block text-sm md:text-base font-medium text-gray-700 mb-3">
                             <i class="fas fa-business-time text-tsunagu-green mr-2"></i>シフト種別
                         </label>
-                        <div class="grid grid-cols-3 gap-2 md:gap-4">
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
                             <label class="cursor-pointer">
-                                <input type="radio" name="shiftType" value="早番" class="hidden peer" checked>
+                                <input type="radio" name="shiftType" value="早番" class="hidden peer">
                                 <div class="bg-gray-100 peer-checked:bg-tsunagu-yellow peer-checked:text-white p-3 md:p-4 rounded-lg text-center font-medium transition text-sm md:text-base">
                                     早番
                                 </div>
@@ -295,7 +352,21 @@
                                     休日出勤
                                 </div>
                             </label>
+                            <label class="cursor-pointer">
+                                <input type="radio" name="shiftType" value="出張" class="hidden peer">
+                                <div class="bg-gray-100 peer-checked:bg-purple-600 peer-checked:text-white p-3 md:p-4 rounded-lg text-center font-medium transition text-sm md:text-base">
+                                    出張
+                                </div>
+                            </label>
                         </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-3 mt-3">
+                            <label class="inline-flex items-center gap-2 text-sm md:text-base text-gray-700">
+                                <input type="checkbox" id="holidayWorkToggle" class="h-4 w-4 text-tsunagu-red border-gray-300 rounded">
+                                <span>休日扱いで記録する（休日出張を含む）</span>
+                            </label>
+                            <p id="shiftSelectionHint" class="text-xs md:text-sm text-red-600">シフトを選択すると打刻ボタンが有効になります。</p>
+                        </div>
+                        <p id="shiftDefaultHours" class="mt-2 text-xs md:text-sm text-gray-600 hidden"></p>
                     </div>
 
                     <!-- 打刻ボタン -->
@@ -361,33 +432,6 @@
                             </div>
                         </div>
                         
-                        <!-- 最近の勤怠データ -->
-                        <div class="bg-gray-50 rounded-xl p-4 md:p-6">
-                            <h3 class="font-bold text-gray-800 mb-4 text-base md:text-lg">
-                                <i class="fas fa-history text-gray-600 mr-2"></i>最近の勤怠（直近10日）
-                            </h3>
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-sm">
-                                    <thead class="bg-gray-200">
-                                        <tr>
-                                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-700">日付</th>
-                                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-700">シフト</th>
-                                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-700">出勤</th>
-                                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-700">退勤</th>
-                                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-700">勤務時間</th>
-                                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-700">残業時間</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="dashboardRecentAttendance" class="divide-y divide-gray-200 bg-white">
-                                        <!-- JavaScriptで動的生成 -->
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div id="dashboardNoData" class="text-center py-8 text-gray-500 hidden">
-                                <i class="fas fa-inbox text-4xl mb-3"></i>
-                                <p class="text-sm">データがありません</p>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -408,8 +452,8 @@
                     
                     <!-- 月間サマリー -->
                     <div id="monthlySummary" class="mb-4 p-3 md:p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                        <h3 class="font-bold text-blue-900 mb-3 text-sm md:text-base">
-                            <i class="fas fa-chart-bar text-blue-600 mr-2"></i>今月のサマリー
+                        <h3 class="font-bold text-blue-900 mb-3 text-sm md:text-base flex items-center gap-2">
+                            <i class="fas fa-chart-bar text-blue-600"></i><span id="attendanceSummaryTitle">今月のサマリー</span>
                         </h3>
                         <div id="monthlySummaryContent" class="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
                             <!-- JavaScriptで動的生成 -->
@@ -440,28 +484,31 @@
                     </div>
                     
                     <div class="overflow-x-auto responsive-table" style="position: relative;">
-                        <table class="w-full text-sm md:text-base">
-                            <thead class="bg-gray-100">
-                                <tr>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 sticky-col-left" style="position: sticky; left: 0; z-index: 10; background-color: rgb(243, 244, 246);">操作</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">日付</th>
-                                    <th id="attendanceNameHeader" class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">氏名</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">シフト</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">出勤</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">退勤</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">休憩</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">勤務時間</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">残業時間</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">振替</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">備考</th>
-                                </tr>
-                            </thead>
-                            <tbody id="attendanceTableBody" class="divide-y divide-gray-200">
-                                <!-- データはJavaScriptで動的に生成 -->
-                            </tbody>
-                        </table>
+                        <div class="hidden md:block">
+                            <table class="w-full text-sm md:text-base">
+                                <thead class="bg-gray-100">
+                                    <tr>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 sticky-col-left" style="position: sticky; left: 0; z-index: 10; background-color: rgb(243, 244, 246);">操作</th>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">日付</th>
+                                        <th id="attendanceNameHeader" class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">氏名</th>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">シフト</th>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">出勤</th>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">退勤</th>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">休憩</th>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">勤務時間</th>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">残業時間</th>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">振替</th>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">備考</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="attendanceTableBody" class="divide-y divide-gray-200">
+                                    <!-- データはJavaScriptで動的に生成 -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="attendanceCardList" class="md:hidden grid grid-cols-1 gap-3"></div>
                     </div>
-                    
+
                     <div id="noDataMessage" class="text-center py-8 text-gray-500 hidden">
                         <i class="fas fa-inbox text-4xl mb-3"></i>
                         <p class="text-sm md:text-base">データがありません</p>
@@ -477,18 +524,27 @@
                             <h2 class="text-xl md:text-2xl font-bold text-gray-800 compact-header">
                                 <i class="fas fa-calendar-check text-tsunagu-red mr-2"></i>振替休暇管理
                             </h2>
-                            <div id="compensatoryFilterContainer" class="flex flex-col sm:flex-row gap-2 md:gap-3 w-full md:w-auto hidden">
-                                <select id="compensatoryEmployeeFilter" class="px-3 md:px-4 py-2 border border-gray-300 rounded-lg text-sm md:text-base w-full sm:w-auto">
-                                    <option value="">全員</option>
-                                    <!-- JavaScriptで動的生成 -->
-                                </select>
+                            <div id="compensatoryFilterContainer" class="flex flex-col sm:flex-row gap-2 md:gap-3 w-full md:w-auto">
+                                <div id="compensatoryEmployeeFilterWrapper" class="w-full sm:w-auto">
+                                    <select id="compensatoryEmployeeFilter" class="px-3 md:px-4 py-2 border border-gray-300 rounded-lg text-sm md:text-base w-full sm:w-auto">
+                                        <option value="">全員</option>
+                                        <!-- JavaScriptで動的生成 -->
+                                    </select>
+                                </div>
+                                <div class="w-full sm:w-auto">
+                                    <select id="compensatoryStatusFilter" class="px-3 md:px-4 py-2 border border-gray-300 rounded-lg text-sm md:text-base w-full sm:w-auto">
+                                        <option value="unused">未使用</option>
+                                        <option value="used">使用済み</option>
+                                        <option value="all">すべて</option>
+                                    </select>
+                                </div>
                                 <button id="compensatoryFilterBtn" class="bg-tsunagu-blue text-white px-4 md:px-6 py-2 rounded-lg hover:bg-blue-700 transition text-sm md:text-base whitespace-nowrap">
                                     <i class="fas fa-filter mr-1 md:mr-2"></i>絞り込み
                                 </button>
                             </div>
                         </div>
                         
-                        <div class="overflow-x-auto responsive-table" style="position: relative;">
+                        <div class="hidden md:block overflow-x-auto responsive-table" style="position: relative;">
                             <table class="w-full text-sm md:text-base" style="min-width: 1000px;">
                                 <thead class="bg-gray-100">
                                     <tr>
@@ -508,6 +564,8 @@
                                 </tbody>
                             </table>
                         </div>
+
+                        <div id="compensatoryCardList" class="md:hidden grid grid-cols-1 gap-3"></div>
                         
                         <div id="noCompensatoryMessage" class="text-center py-8 text-gray-500 hidden">
                             <i class="fas fa-inbox text-4xl mb-3"></i>
@@ -521,23 +579,23 @@
             <div id="paidleaveView" class="view-content hidden">
                 <div class="max-w-6xl mx-auto">
                     <!-- 有給残日数カード -->
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                        <div class="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
-                            <div class="text-sm opacity-90 mb-2">有給残日数</div>
-                            <div class="text-4xl font-bold" id="paidLeaveRemaining">-</div>
+                    <div id="paidLeaveSummarySection" class="grid grid-cols-3 gap-3 md:gap-4 mb-6">
+                        <div class="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl shadow-lg p-4 sm:p-6 text-white min-w-0">
+                            <div class="text-xs sm:text-sm opacity-90 mb-1 sm:mb-2">有給残日数</div>
+                            <div class="text-2xl sm:text-4xl font-bold" id="paidLeaveRemaining">-</div>
                         </div>
-                        <div class="bg-gradient-to-r from-green-500 to-green-600 rounded-xl shadow-lg p-6 text-white">
-                            <div class="text-sm opacity-90 mb-2">今年度付与</div>
-                            <div class="text-4xl font-bold" id="paidLeaveGranted">-</div>
+                        <div class="bg-gradient-to-r from-green-500 to-green-600 rounded-xl shadow-lg p-4 sm:p-6 text-white min-w-0">
+                            <div class="text-xs sm:text-sm opacity-90 mb-1 sm:mb-2">今年度付与</div>
+                            <div class="text-2xl sm:text-4xl font-bold" id="paidLeaveGranted">-</div>
                         </div>
-                        <div class="bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl shadow-lg p-6 text-white">
-                            <div class="text-sm opacity-90 mb-2">今年度使用</div>
-                            <div class="text-4xl font-bold" id="paidLeaveUsed">-</div>
+                        <div class="bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl shadow-lg p-4 sm:p-6 text-white min-w-0">
+                            <div class="text-xs sm:text-sm opacity-90 mb-1 sm:mb-2">今年度使用</div>
+                            <div class="text-2xl sm:text-4xl font-bold" id="paidLeaveUsed">-</div>
                         </div>
                     </div>
 
                     <!-- 有給申請フォーム -->
-                    <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                    <div id="leaveRequestFormCard" class="bg-white rounded-xl shadow-lg p-6 mb-6">
                         <h2 class="text-xl font-bold text-gray-800 mb-4">
                             <i class="fas fa-plus-circle text-tsunagu-blue mr-2"></i>有給申請
                         </h2>
@@ -586,7 +644,7 @@
                             </select>
                         </div>
                         
-                        <div class="overflow-x-auto" style="position: relative;">
+                        <div class="hidden md:block overflow-x-auto" style="position: relative;">
                             <table class="w-full" style="min-width: 800px;">
                                 <thead class="bg-gray-100">
                                     <tr>
@@ -605,6 +663,8 @@
                                 </tbody>
                             </table>
                         </div>
+
+                        <div id="leaveRequestCardList" class="md:hidden grid grid-cols-1 gap-3"></div>
                         
                         <div id="noLeaveRequestMessage" class="text-center py-8 text-gray-500 hidden">
                             <i class="fas fa-inbox text-4xl mb-3"></i>
@@ -662,7 +722,7 @@
                                 </h3>
                                 <ul class="text-xs md:text-sm text-blue-800 space-y-1">
                                     <li>• 日付、氏名、社員番号</li>
-                                    <li>• シフト種別（早番/遅番/休日出勤）</li>
+                                    <li>• シフト種別（早番/遅番/休日出勤/出張/休日出張）</li>
                                     <li>• 出勤時刻、退勤時刻</li>
                                     <li>• 休憩時間、勤務時間</li>
                                     <li>• 振替情報、備考</li>
@@ -763,6 +823,8 @@
                         <option value="早番">早番</option>
                         <option value="遅番">遅番</option>
                         <option value="休日出勤">休日出勤</option>
+                        <option value="出張">出張</option>
+                        <option value="休日出張">休日出張</option>
                     </select>
                 </div>
 
@@ -789,11 +851,14 @@
                     </p>
                 </div>
 
-                <div class="flex flex-col sm:flex-row gap-3 mt-6">
-                    <button type="button" id="cancelAttendanceBtn" class="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-800 font-medium py-2 px-4 rounded-lg transition text-sm md:text-base">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-6">
+                    <button type="button" id="deleteAttendanceBtn" class="bg-red-50 hover:bg-red-100 text-red-700 font-medium py-2 px-4 rounded-lg border border-red-200 transition text-sm md:text-base">
+                        削除
+                    </button>
+                    <button type="button" id="cancelAttendanceBtn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-medium py-2 px-4 rounded-lg transition text-sm md:text-base">
                         キャンセル
                     </button>
-                    <button type="submit" class="flex-1 bg-tsunagu-blue hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition text-sm md:text-base">
+                    <button type="submit" class="bg-tsunagu-blue hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition text-sm md:text-base">
                         保存
                     </button>
                 </div>
@@ -828,6 +893,8 @@
                         <option value="早番">早番</option>
                         <option value="遅番">遅番</option>
                         <option value="休日出勤">休日出勤</option>
+                        <option value="出張">出張</option>
+                        <option value="休日出張">休日出張</option>
                     </select>
                 </div>
 
@@ -899,48 +966,6 @@
                     </button>
                 </div>
             </form>
-        </div>
-    </div>
-
-    <!-- 打刻確認シート -->
-    <div id="clockConfirmModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-xl p-5 md:p-6 space-y-4 animate-slide-up">
-            <div class="flex items-center justify-between">
-                <div>
-                    <p class="text-xs text-gray-500">記録内容の最終確認</p>
-                    <h3 id="clockConfirmTitle" class="text-lg md:text-xl font-bold text-gray-800"></h3>
-                </div>
-                <button id="closeClockConfirm" class="text-gray-500 hover:text-gray-700">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-
-            <div class="bg-gray-50 rounded-xl p-4 space-y-3 text-sm md:text-base">
-                <div class="flex items-center justify-between">
-                    <span class="text-gray-600">シフト</span>
-                    <span id="confirmShiftType" class="font-semibold text-tsunagu-blue"></span>
-                </div>
-                <div class="flex items-center justify-between">
-                    <span class="text-gray-600">記録予定時刻</span>
-                    <span id="confirmTargetTime" class="font-semibold text-gray-900"></span>
-                </div>
-                <div class="flex items-center justify-between">
-                    <span class="text-gray-600">現在の状態</span>
-                    <span id="confirmCurrentStatus" class="font-semibold text-gray-900"></span>
-                </div>
-                <div id="confirmWorkPreview" class="hidden border-t pt-3">
-                    <div class="flex items-center justify-between text-gray-700">
-                        <span>想定勤務時間</span>
-                        <span id="confirmWorkHours" class="font-semibold"></span>
-                    </div>
-                    <p id="confirmWorkNote" class="text-xs text-orange-600 mt-1"></p>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button id="cancelClockAction" class="w-full px-4 py-3 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50">キャンセル</button>
-                <button id="confirmClockAction" class="w-full px-4 py-3 rounded-lg bg-tsunagu-blue text-white font-semibold hover:bg-blue-700 shadow">確定して記録</button>
-            </div>
         </div>
     </div>
 

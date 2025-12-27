@@ -140,7 +140,7 @@ const utils = {
 
     // 管理者(000)を従業員選択肢から除外
     getSelectableEmployees(employees = []) {
-        return employees.filter(emp => emp.id !== '000');
+        return employees.filter(emp => emp.employee_number !== '000' && emp.role !== 'admin');
     }
 };
 

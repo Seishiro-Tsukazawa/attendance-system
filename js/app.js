@@ -202,6 +202,15 @@ const api = {
         const result = await response.json();
         return result[0];
     },
+
+    // 勤怠記録取得（従業員と期間指定）
+    async getAttendanceByRange(employeeId, startDate, endDate) {
+        const query = `${SUPABASE_URL}/rest/v1/attendance?employee_id=eq.${employeeId}&date=gte.${startDate}&date=lte.${endDate}&select=*`;
+        const response = await fetch(query, {
+            headers: supabaseHeaders
+        });
+        return await response.json();
+    },
     
     // 勤怠記録作成
     async createAttendance(data) {
@@ -739,7 +748,7 @@ const clock = {
             
             const updated = await api.updateAttendance(app.todayAttendance.id, updatedData);
             app.todayAttendance = updated;
-            
+
             // 休日出勤の場合、振替休暇を記録（休日出張含む）
             if (['休日出勤', '休日出張'].includes(app.todayAttendance.shift_type)) {
                 const comp = utils.calculateCompensatory(workHours);
@@ -753,9 +762,10 @@ const clock = {
                     used_date: null
                 });
             }
-            
+
             this.updateTodayStatus();
             this.updateButtons();
+            await this.updateMonthlyOvertime();
             utils.showToast('退勤を記録しました', 'success');
         } catch (error) {
             console.error('退勤エラー:', error);
@@ -774,26 +784,26 @@ const clock = {
         const { clock_in, clock_out, shift_type, work_hours } = app.todayAttendance;
         
         let html = `
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-2 gap-2 sm:gap-3 text-xs md:text-sm">
                 <div>
-                    <div class="text-sm text-gray-600">シフト</div>
-                    <div class="text-lg font-bold text-tsunagu-blue">${shift_type}</div>
+                    <div class="text-[11px] text-gray-600">シフト</div>
+                    <div class="text-base md:text-lg font-bold text-tsunagu-blue">${shift_type}</div>
                 </div>
                 <div>
-                    <div class="text-sm text-gray-600">出勤時刻</div>
-                    <div class="text-lg font-bold text-tsunagu-green">${utils.formatTime(clock_in)}</div>
+                    <div class="text-[11px] text-gray-600">出勤時刻</div>
+                    <div class="text-base md:text-lg font-bold text-tsunagu-green">${utils.formatTime(clock_in)}</div>
                 </div>
         `;
         
         if (clock_out) {
             html += `
                 <div>
-                    <div class="text-sm text-gray-600">退勤時刻</div>
-                    <div class="text-lg font-bold text-tsunagu-red">${utils.formatTime(clock_out)}</div>
+                    <div class="text-[11px] text-gray-600">退勤時刻</div>
+                    <div class="text-base md:text-lg font-bold text-tsunagu-red">${utils.formatTime(clock_out)}</div>
                 </div>
                 <div>
-                    <div class="text-sm text-gray-600">勤務時間</div>
-                    <div class="text-lg font-bold text-gray-800">${work_hours}時間</div>
+                    <div class="text-[11px] text-gray-600">勤務時間</div>
+                    <div class="text-base md:text-lg font-bold text-gray-800">${work_hours}時間</div>
                 </div>
             `;
         }
@@ -826,13 +836,51 @@ const clock = {
             resetBtnContainer.classList.remove('hidden');
         }
     },
-    
+
+    async updateMonthlyOvertime(useCached = false) {
+        const valueEl = document.getElementById('monthlyOvertimeValue');
+        const rangeEl = document.getElementById('monthlyOvertimeRange');
+        if (!valueEl || !rangeEl) return;
+
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const startDate = `${year}-${month}-01`;
+        const endDate = new Date(year, now.getMonth() + 1, 0).toISOString().split('T')[0];
+
+        rangeEl.textContent = `${year}年${month}月`;
+        valueEl.textContent = '集計中...';
+
+        try {
+            let attendanceList = [];
+
+            if (useCached && app.allAttendance.length > 0) {
+                attendanceList = app.allAttendance;
+            } else {
+                attendanceList = await api.getAttendanceByRange(app.currentUser.id, startDate, endDate);
+            }
+
+            const personalRecords = attendanceList.filter(att =>
+                att.employee_id === app.currentUser.id &&
+                att.date >= startDate && att.date <= endDate &&
+                att.clock_out
+            );
+
+            const overtimeHours = personalRecords.reduce((sum, att) => sum + (att.overtime_hours || 0), 0);
+            valueEl.textContent = `${Math.round(overtimeHours * 10) / 10}時間`;
+        } catch (error) {
+            console.error('残業時間集計エラー:', error);
+            valueEl.textContent = '—';
+        }
+    },
+
     async loadTodayAttendance() {
         const today = utils.getCurrentDate();
         app.todayAttendance = await api.getTodayAttendance(app.currentUser.id, today);
         shiftSelection.applyAttendanceShift(app.todayAttendance?.shift_type);
         this.updateTodayStatus();
         this.updateButtons();
+        await this.updateMonthlyOvertime();
     },
     
     async resetClock() {
@@ -854,6 +902,7 @@ const clock = {
             app.todayAttendance = null;
             this.updateTodayStatus();
             this.updateButtons();
+            await this.updateMonthlyOvertime();
             utils.showToast('打刻データをリセットしました', 'success');
         } catch (error) {
             console.error('リセットエラー:', error);
@@ -950,9 +999,10 @@ const attendance = {
         } else {
             if (nameHeader) nameHeader.style.display = 'none';
         }
-        
+
         // デフォルトで当月のデータを表示
         this.filterByMonth();
+        await clock.updateMonthlyOvertime(true);
     },
     
     populateEmployeeFilter() {

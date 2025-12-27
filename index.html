@@ -258,20 +258,32 @@
             <!-- 打刻ビュー -->
             <div id="clockView" class="view-content">
                 <div class="max-w-2xl mx-auto">
-                    <!-- 現在時刻表示 -->
-                    <div class="bg-white rounded-xl shadow-lg p-6 md:p-8 mb-4 md:mb-6 text-center compact-card">
-                        <div class="text-gray-600 mb-2 text-sm md:text-base">現在時刻</div>
-                        <div id="currentTime" class="text-3xl md:text-5xl font-bold text-gray-800 mb-2"></div>
-                        <div id="currentDate" class="text-base md:text-xl text-gray-600"></div>
+                    <!-- 現在時刻＆今月の残業 -->
+                    <div class="grid md:grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
+                        <div class="bg-white rounded-xl shadow-lg p-4 md:p-5 text-center compact-card">
+                            <div class="text-gray-600 mb-1 text-xs md:text-sm tracking-wide">現在時刻</div>
+                            <div id="currentTime" class="text-2xl md:text-4xl font-bold text-gray-800 mb-1"></div>
+                            <div id="currentDate" class="text-sm md:text-lg text-gray-600"></div>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-lg p-4 md:p-5 compact-card">
+                            <div class="flex items-center justify-between text-xs md:text-sm text-gray-600 mb-1">
+                                <span class="flex items-center gap-2"><i class="fas fa-business-time text-orange-500"></i>今月の残業</span>
+                                <span id="monthlyOvertimeRange" class="text-[11px] md:text-xs text-gray-500"></span>
+                            </div>
+                            <div class="flex items-baseline gap-3">
+                                <div id="monthlyOvertimeValue" class="text-2xl md:text-3xl font-bold text-orange-600">--時間</div>
+                                <p class="text-[11px] md:text-xs text-gray-500">当月の退勤済みデータから集計</p>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- 今日の勤務状況 -->
-                    <div id="todayStatus" class="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-4 md:mb-6 compact-card">
-                        <h2 class="text-lg md:text-xl font-bold text-gray-800 mb-4 compact-header">
+                    <div id="todayStatus" class="bg-white rounded-xl shadow-lg p-3 md:p-4 mb-4 md:mb-6 compact-card">
+                        <h2 class="text-base md:text-lg font-bold text-gray-800 mb-3 compact-header">
                             <i class="fas fa-calendar-day text-tsunagu-blue mr-2"></i>本日の勤務状況
                         </h2>
-                        <div id="todayStatusContent" class="space-y-3">
-                            <p class="text-gray-600 text-sm md:text-base">まだ出勤していません</p>
+                        <div id="todayStatusContent" class="space-y-2">
+                            <p class="text-gray-600 text-sm">まだ出勤していません</p>
                         </div>
                     </div>
 

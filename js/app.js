@@ -952,14 +952,17 @@ const attendance = {
 
     populateEmployeeFilter() {
         const select = document.getElementById('employeeFilter');
+
         const selectableEmployees = utils.getSelectableEmployees(app.allEmployees, { includeInactive: true });
 
         const options = selectableEmployees.map(emp =>
+
             `<option value="${emp.id}">${emp.name}</option>`
         ).join('');
         select.innerHTML = options;
 
         // デフォルトで先頭の従業員を選択
+
         if (selectableEmployees.length > 0) {
             select.value = selectableEmployees[0].id;
         } else {
@@ -2027,7 +2030,9 @@ const compensatoryManagement = {
 const exportData = {
     loadEmployeeCheckboxes() {
         const container = document.getElementById('employeeCheckboxList');
+
         const activeEmployees = utils.getSelectableEmployees(app.allEmployees);
+
         const selectAllWrapper = document.getElementById('selectAllEmployees')?.closest('div');
 
         if (app.currentUser.role === 'admin') {
@@ -2275,6 +2280,7 @@ const paidLeave = {
 
         return (b.leave_date || '').localeCompare(a.leave_date || '');
     },
+
 
     applyRoleVisibility() {
         const summarySection = document.getElementById('paidLeaveSummarySection');

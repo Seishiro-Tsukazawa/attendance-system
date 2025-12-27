@@ -1123,6 +1123,9 @@ const attendance = {
         const summaryContent = document.getElementById('monthlySummaryContent');
         const summaryTitle = document.getElementById('attendanceSummaryTitle');
         const currentMonth = new Date().toISOString().substring(0, 7);
+        const selectedEmployeeId = app.currentUser.role === 'admin'
+            ? document.getElementById('employeeFilter')?.value
+            : app.currentUser.id;
         
         // 現在表示中のデータから集計
         let totalDays = 0;
@@ -1149,7 +1152,10 @@ const attendance = {
         });
 
         if (summaryTitle) {
-            if (displayedEmployeeIds.length === 1) {
+            if (selectedEmployeeId) {
+                const employeeName = app.allEmployees.find(e => e.id === selectedEmployeeId)?.name || '従業員';
+                summaryTitle.textContent = `${employeeName}さんの今月のサマリー`;
+            } else if (displayedEmployeeIds.length === 1) {
                 const employeeName = app.allEmployees.find(e => e.id === displayedEmployeeIds[0])?.name || '従業員';
                 summaryTitle.textContent = `${employeeName}さんの今月のサマリー`;
             } else {
@@ -2630,6 +2636,10 @@ async function init() {
             // 管理者は打刻タブを非表示
             document.getElementById('clockNavBtn')?.classList.add('hidden');
             document.getElementById('clockView')?.classList.add('hidden');
+
+            // 管理者はデータ出力タブを非表示
+            document.getElementById('exportNavBtn')?.classList.add('hidden');
+            document.getElementById('exportView')?.classList.add('hidden');
         }
 
         // 時計開始
@@ -2743,6 +2753,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 勤怠フィルター
     document.getElementById('filterBtn').addEventListener('click', () => attendance.filterByMonth());
+    document.getElementById('employeeFilter').addEventListener('change', () => attendance.filterByMonth());
+    document.getElementById('monthFilter').addEventListener('change', () => attendance.filterByMonth());
     
     // 振替休暇フィルター
     document.getElementById('compensatoryFilterBtn').addEventListener('click', () => compensatoryManagement.filterCompensatory());

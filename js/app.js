@@ -132,10 +132,19 @@ const utils = {
         toastIcon.innerHTML = icons[type];
         toastMessage.textContent = message;
         toast.classList.remove('hidden');
-        
+
         setTimeout(() => {
             toast.classList.add('hidden');
         }, 3000);
+    },
+
+    // 管理者(000)を従業員選択肢から除外し、原則アクティブな従業員のみ返す
+    getSelectableEmployees(employees = [], { includeInactive = false } = {}) {
+        return employees.filter(emp =>
+            emp.employee_number !== '000' &&
+            emp.role !== 'admin' &&
+            (includeInactive || emp.status === 'active')
+        );
     }
 };
 
@@ -943,14 +952,21 @@ const attendance = {
 
     populateEmployeeFilter() {
         const select = document.getElementById('employeeFilter');
-        const options = app.allEmployees.map(emp =>
+
+        const selectableEmployees = utils.getSelectableEmployees(app.allEmployees, { includeInactive: true });
+
+        const options = selectableEmployees.map(emp =>
+
             `<option value="${emp.id}">${emp.name}</option>`
         ).join('');
         select.innerHTML = options;
 
         // デフォルトで先頭の従業員を選択
-        if (app.allEmployees.length > 0) {
-            select.value = app.allEmployees[0].id;
+
+        if (selectableEmployees.length > 0) {
+            select.value = selectableEmployees[0].id;
+        } else {
+            select.value = '';
         }
     },
     
@@ -1345,14 +1361,15 @@ const attendance = {
     showAddModal() {
         // 従業員セレクトボックスを生成
         const selectElement = document.getElementById('addEmployeeId');
-        
+
         if (app.currentUser.role === 'admin') {
             // 管理者：全従業員を選択可能
-            const options = app.allEmployees.map(emp => 
+            const selectableEmployees = utils.getSelectableEmployees(app.allEmployees);
+            const options = selectableEmployees.map(emp =>
                 `<option value="${emp.id}">${emp.name}</option>`
             ).join('');
             selectElement.innerHTML = '<option value="">選択してください</option>' + options;
-            selectElement.disabled = false;
+            selectElement.disabled = selectableEmployees.length === 0;
         } else {
             // 一般ユーザー：自分のみ選択（固定）
             selectElement.innerHTML = `<option value="${app.currentUser.id}">${app.currentUser.name}</option>`;
@@ -1522,13 +1539,15 @@ const dashboard = {
     
     populateEmployeeFilter() {
         const select = document.getElementById('dashboardEmployeeFilter');
-        
+        const selectableEmployees = utils.getSelectableEmployees(app.allEmployees);
+
         if (app.currentUser.role === 'admin') {
-            // 管理者：全員選択可能
-            const options = app.allEmployees.map(emp => 
+            // 管理者：全員選択可能（管理者アカウントは除外）
+            const options = selectableEmployees.map(emp =>
                 `<option value="${emp.id}">${emp.name}</option>`
             ).join('');
-            select.innerHTML = options;
+            select.innerHTML = options || '<option value="">従業員が登録されていません</option>';
+            select.disabled = selectableEmployees.length === 0;
         } else {
             // 一般ユーザー：自分のみ
             select.innerHTML = `<option value="${app.currentUser.id}">${app.currentUser.name}</option>`;
@@ -1712,9 +1731,9 @@ const compensatoryManagement = {
     
     renderEmployeeFilter() {
         const filterSelect = document.getElementById('compensatoryEmployeeFilter');
-        const activeEmployees = app.allEmployees.filter(e => e.status === 'active');
-        
-        const options = activeEmployees.map(emp => 
+        const activeEmployees = utils.getSelectableEmployees(app.allEmployees);
+
+        const options = activeEmployees.map(emp =>
             `<option value="${emp.id}">${emp.name}</option>`
         ).join('');
         
@@ -2011,7 +2030,9 @@ const compensatoryManagement = {
 const exportData = {
     loadEmployeeCheckboxes() {
         const container = document.getElementById('employeeCheckboxList');
-        const activeEmployees = app.allEmployees.filter(e => e.status === 'active');
+
+        const activeEmployees = utils.getSelectableEmployees(app.allEmployees);
+
         const selectAllWrapper = document.getElementById('selectAllEmployees')?.closest('div');
 
         if (app.currentUser.role === 'admin') {
@@ -2260,6 +2281,21 @@ const paidLeave = {
         return (b.leave_date || '').localeCompare(a.leave_date || '');
     },
 
+
+    applyRoleVisibility() {
+        const summarySection = document.getElementById('paidLeaveSummarySection');
+        const requestFormCard = document.getElementById('leaveRequestFormCard');
+        const isAdmin = app.currentUser?.role === 'admin';
+
+        if (isAdmin) {
+            summarySection?.classList.add('hidden');
+            requestFormCard?.classList.add('hidden');
+        } else {
+            summarySection?.classList.remove('hidden');
+            requestFormCard?.classList.remove('hidden');
+        }
+    },
+
     async loadPaidLeave() {
         app.allEmployees = await api.getEmployees();
         const paidLeaves = await api.getPaidLeaves();
@@ -2276,16 +2312,8 @@ const paidLeave = {
             app.leaveRequests = [...leaveRequests].sort(this.sortRequestsByNewest);
         }
 
-        // 管理者はサマリーカードと申請フォームを非表示
-        const summarySection = document.getElementById('paidLeaveSummarySection');
-        const requestFormCard = document.getElementById('leaveRequestFormCard');
-        if (app.currentUser.role === 'admin') {
-            summarySection?.classList.add('hidden');
-            requestFormCard?.classList.add('hidden');
-        } else {
-            summarySection?.classList.remove('hidden');
-            requestFormCard?.classList.remove('hidden');
-        }
+        // ロールに応じてサマリーカードと申請フォームの表示を制御
+        this.applyRoleVisibility();
 
         this.updateSummary();
         this.renderRequests();
@@ -2651,6 +2679,9 @@ async function init() {
         document.getElementById('currentUserName').textContent = app.currentUser.name;
         const mobileUserName = document.getElementById('currentUserNameMobile');
         if (mobileUserName) mobileUserName.textContent = app.currentUser.name;
+
+        // ロールに応じた有給ビューの表示を事前に適用
+        paidLeave.applyRoleVisibility();
 
         // 管理者の場合は従業員管理タブを表示
         if (app.currentUser.role === 'admin') {

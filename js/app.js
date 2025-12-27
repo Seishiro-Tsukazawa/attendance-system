@@ -917,10 +917,15 @@ const attendance = {
         app.allEmployees = await api.getEmployees(); // 従業員データを取得
         app.allAttendance = await api.getAttendance();
         app.compensatoryLeaves = await api.getCompensatoryLeaves();
-        
+
         // 新規追加ボタンを表示（全ユーザー）
         document.getElementById('addAttendanceBtn').classList.remove('hidden');
-        
+
+        // 月フィルターを当月にセット
+        const monthInput = document.getElementById('monthFilter');
+        const currentMonth = new Date().toISOString().substring(0, 7);
+        if (monthInput) monthInput.value = currentMonth;
+
         // 管理者の場合は従業員フィルターも表示＆従業員リストを生成
         const nameHeader = document.getElementById('attendanceNameHeader');
         if (app.currentUser.role === 'admin') {
@@ -935,13 +940,18 @@ const attendance = {
         this.filterByMonth();
         await clock.updateMonthlyOvertime(true);
     },
-    
+
     populateEmployeeFilter() {
         const select = document.getElementById('employeeFilter');
-        const options = app.allEmployees.map(emp => 
+        const options = app.allEmployees.map(emp =>
             `<option value="${emp.id}">${emp.name}</option>`
         ).join('');
-        select.innerHTML = '<option value="">全員</option>' + options;
+        select.innerHTML = options;
+
+        // デフォルトで先頭の従業員を選択
+        if (app.allEmployees.length > 0) {
+            select.value = app.allEmployees[0].id;
+        }
     },
     
     renderTable() {
@@ -1111,6 +1121,7 @@ const attendance = {
     
     updateMonthlySummary() {
         const summaryContent = document.getElementById('monthlySummaryContent');
+        const summaryTitle = document.getElementById('attendanceSummaryTitle');
         const currentMonth = new Date().toISOString().substring(0, 7);
         
         // 現在表示中のデータから集計
@@ -1136,6 +1147,15 @@ const attendance = {
                 totalCompensatoryHours += leave.substitute_hours || 0;
             }
         });
+
+        if (summaryTitle) {
+            if (displayedEmployeeIds.length === 1) {
+                const employeeName = app.allEmployees.find(e => e.id === displayedEmployeeIds[0])?.name || '従業員';
+                summaryTitle.textContent = `${employeeName}さんの今月のサマリー`;
+            } else {
+                summaryTitle.textContent = '今月のサマリー';
+            }
+        }
         
         const html = `
             <div class="bg-white rounded-lg p-3 shadow-sm">
@@ -1206,7 +1226,7 @@ const attendance = {
         const monthInput = document.getElementById('monthFilter');
         const employeeSelect = document.getElementById('employeeFilter');
         const targetMonth = monthInput.value;
-        const selectedEmployeeId = employeeSelect.value;
+        const selectedEmployeeId = employeeSelect.value || (employeeSelect.options[0]?.value || '');
         
         // まず全データから開始
         let filtered = [...app.allAttendance];
@@ -1215,9 +1235,9 @@ const attendance = {
         if (app.currentUser.role !== 'admin') {
             filtered = filtered.filter(att => att.employee_id === app.currentUser.id);
         }
-        
-        // 管理者で従業員が選択されている場合
-        if (app.currentUser.role === 'admin' && selectedEmployeeId) {
+
+        // 管理者は必ず選択した従業員で絞り込み
+        if (app.currentUser.role === 'admin') {
             filtered = filtered.filter(att => att.employee_id === selectedEmployeeId);
         }
         
@@ -1229,7 +1249,7 @@ const attendance = {
         app.filteredAttendance = filtered;
         const monthLabel = targetMonth ? `${targetMonth.split('-')[0]}年${targetMonth.split('-')[1]}月` : '全期間';
         const employeeLabel = app.currentUser.role === 'admin'
-            ? (selectedEmployeeId ? (app.allEmployees.find(e => e.id === selectedEmployeeId)?.name || '選択中の従業員') : '全員')
+            ? (app.allEmployees.find(e => e.id === selectedEmployeeId)?.name || '選択中の従業員')
             : '自分のみ';
         const summary = document.getElementById('attendanceFilterSummary');
         if (summary) {
@@ -2240,6 +2260,17 @@ const paidLeave = {
             app.leaveRequests = [...leaveRequests].sort(this.sortRequestsByNewest);
         }
 
+        // 管理者はサマリーカードと申請フォームを非表示
+        const summarySection = document.getElementById('paidLeaveSummarySection');
+        const requestFormCard = document.getElementById('leaveRequestFormCard');
+        if (app.currentUser.role === 'admin') {
+            summarySection?.classList.add('hidden');
+            requestFormCard?.classList.add('hidden');
+        } else {
+            summarySection?.classList.remove('hidden');
+            requestFormCard?.classList.remove('hidden');
+        }
+
         this.updateSummary();
         this.renderRequests();
     },
@@ -2604,21 +2635,28 @@ async function init() {
         document.getElementById('currentUserName').textContent = app.currentUser.name;
         const mobileUserName = document.getElementById('currentUserNameMobile');
         if (mobileUserName) mobileUserName.textContent = app.currentUser.name;
-        
+
         // 管理者の場合は従業員管理タブを表示
         if (app.currentUser.role === 'admin') {
             document.getElementById('employeeManageBtn').classList.remove('hidden');
+
+            // 管理者は打刻タブを非表示
+            document.getElementById('clockNavBtn')?.classList.add('hidden');
+            document.getElementById('clockView')?.classList.add('hidden');
         }
-        
+
         // 時計開始
         updateClock();
         setInterval(updateClock, 1000);
-        
-        // 今日の勤怠読み込み
-        await clock.loadTodayAttendance();
-        
-        // 初期表示は打刻画面
-        showView('clock');
+
+        // 役割に応じた初期データ読み込み
+        if (app.currentUser.role !== 'admin') {
+            await clock.loadTodayAttendance();
+            showView('clock');
+        } else {
+            await dashboard.loadDashboard();
+            showView('dashboard');
+        }
     } else {
         showScreen('login');
     }

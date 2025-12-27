@@ -269,7 +269,7 @@
         <nav class="bg-white shadow-md">
             <div class="container mx-auto px-4">
                 <div class="flex space-x-1 overflow-x-auto nav-scroll">
-                    <button class="nav-btn active px-4 md:px-6 py-3 font-medium transition border-b-2 whitespace-nowrap text-sm md:text-base flex-shrink-0" data-view="clock">
+                    <button id="clockNavBtn" class="nav-btn active px-4 md:px-6 py-3 font-medium transition border-b-2 whitespace-nowrap text-sm md:text-base flex-shrink-0" data-view="clock">
                         <i class="fas fa-clock mr-1 md:mr-2"></i><span>打刻</span>
                     </button>
                     <button class="nav-btn px-4 md:px-6 py-3 font-medium transition border-b-2 whitespace-nowrap text-sm md:text-base flex-shrink-0" data-view="dashboard">
@@ -479,8 +479,8 @@
                     
                     <!-- 月間サマリー -->
                     <div id="monthlySummary" class="mb-4 p-3 md:p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                        <h3 class="font-bold text-blue-900 mb-3 text-sm md:text-base">
-                            <i class="fas fa-chart-bar text-blue-600 mr-2"></i>今月のサマリー
+                        <h3 class="font-bold text-blue-900 mb-3 text-sm md:text-base flex items-center gap-2">
+                            <i class="fas fa-chart-bar text-blue-600"></i><span id="attendanceSummaryTitle">今月のサマリー</span>
                         </h3>
                         <div id="monthlySummaryContent" class="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
                             <!-- JavaScriptで動的生成 -->
@@ -597,7 +597,7 @@
             <div id="paidleaveView" class="view-content hidden">
                 <div class="max-w-6xl mx-auto">
                     <!-- 有給残日数カード -->
-                    <div class="grid grid-cols-3 gap-3 md:gap-4 mb-6">
+                    <div id="paidLeaveSummarySection" class="grid grid-cols-3 gap-3 md:gap-4 mb-6">
                         <div class="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl shadow-lg p-4 sm:p-6 text-white min-w-0">
                             <div class="text-xs sm:text-sm opacity-90 mb-1 sm:mb-2">有給残日数</div>
                             <div class="text-2xl sm:text-4xl font-bold" id="paidLeaveRemaining">-</div>
@@ -613,7 +613,7 @@
                     </div>
 
                     <!-- 有給申請フォーム -->
-                    <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                    <div id="leaveRequestFormCard" class="bg-white rounded-xl shadow-lg p-6 mb-6">
                         <h2 class="text-xl font-bold text-gray-800 mb-4">
                             <i class="fas fa-plus-circle text-tsunagu-blue mr-2"></i>有給申請
                         </h2>

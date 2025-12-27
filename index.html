@@ -149,22 +149,35 @@
             </div>
             
             <form id="loginForm" class="space-y-4 md:space-y-6">
-                <div>
-                    <label for="employeeNumber" class="block text-sm font-medium text-gray-700 mb-2">
-                        <i class="fas fa-user mr-2"></i>社員番号
-                    </label>
-                    <input 
-                        type="text" 
-                        id="employeeNumber" 
-                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-tsunagu-blue focus:border-transparent transition text-base"
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between">
+                        <label for="employeeNumber" class="block text-sm font-medium text-gray-700">
+                            <i class="fas fa-user mr-2"></i>社員番号
+                        </label>
+                        <span id="lastEmployeeNumberBadge" class="hidden text-xs px-2 py-1 rounded-full bg-blue-50 text-tsunagu-blue border border-blue-200"></span>
+                    </div>
+                    <input
+                        type="text"
+                        id="employeeNumber"
+                        inputmode="numeric"
+                        pattern="\\d{3,}"
+                        autocomplete="one-time-code"
+                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-tsunagu-blue focus:border-transparent transition text-base tracking-widest"
                         placeholder="例: 001"
                         required
                     >
+                    <p id="employeeNumberHint" class="text-xs text-gray-500">半角数字3桁以上で入力してください。入力すると自動で確認します。</p>
+                    <div class="flex items-center gap-2 text-sm">
+                        <button id="useLastEmployeeBtn" type="button" class="hidden px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg">
+                            <i class="fas fa-clock-rotate-left mr-1"></i>前回の番号を呼び出す
+                        </button>
+                        <span id="employeeNumberValidation" class="text-xs text-red-600"></span>
+                    </div>
                 </div>
-                
-                <button 
-                    type="submit" 
-                    class="w-full bg-tsunagu-blue hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300 transform hover:scale-105"
+
+                <button
+                    type="submit"
+                    class="w-full bg-tsunagu-blue hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300 transform hover:scale-105 shadow-md"
                 >
                     <i class="fas fa-sign-in-alt mr-2"></i>ログイン
                 </button>
@@ -290,10 +303,12 @@
                         <button id="clockInBtn" class="bg-tsunagu-green hover:bg-green-700 text-white rounded-xl shadow-lg p-6 md:p-8 transition transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed">
                             <i class="fas fa-sign-in-alt text-3xl md:text-4xl mb-2 md:mb-3"></i>
                             <div class="text-xl md:text-2xl font-bold">出勤</div>
+                            <p class="text-sm opacity-80">シフトと現在時刻を確認してから記録</p>
                         </button>
                         <button id="clockOutBtn" class="bg-tsunagu-red hover:bg-red-700 text-white rounded-xl shadow-lg p-6 md:p-8 transition transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                             <i class="fas fa-sign-out-alt text-3xl md:text-4xl mb-2 md:mb-3"></i>
                             <div class="text-xl md:text-2xl font-bold">退勤</div>
+                            <p class="text-sm opacity-80">勤務時間のプレビューを確認して記録</p>
                         </button>
                     </div>
                     
@@ -419,6 +434,10 @@
                             </button>
                         </div>
                     </div>
+                    <div id="attendanceFilterSummary" class="text-xs md:text-sm text-gray-600 mb-2 flex items-center gap-2">
+                        <i class="fas fa-info-circle text-tsunagu-blue"></i>
+                        <span>表示条件を読み込み中...</span>
+                    </div>
                     
                     <div class="overflow-x-auto responsive-table" style="position: relative;">
                         <table class="w-full text-sm md:text-base">
@@ -430,11 +449,11 @@
                                     <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">シフト</th>
                                     <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">出勤</th>
                                     <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">退勤</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">休憩</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">勤務時間</th>
+                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">休憩</th>
+                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">勤務時間</th>
                                     <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">残業時間</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">振替</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">備考</th>
+                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">振替</th>
+                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">備考</th>
                                 </tr>
                             </thead>
                             <tbody id="attendanceTableBody" class="divide-y divide-gray-200">
@@ -880,6 +899,48 @@
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- 打刻確認シート -->
+    <div id="clockConfirmModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-xl p-5 md:p-6 space-y-4 animate-slide-up">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-xs text-gray-500">記録内容の最終確認</p>
+                    <h3 id="clockConfirmTitle" class="text-lg md:text-xl font-bold text-gray-800"></h3>
+                </div>
+                <button id="closeClockConfirm" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div class="bg-gray-50 rounded-xl p-4 space-y-3 text-sm md:text-base">
+                <div class="flex items-center justify-between">
+                    <span class="text-gray-600">シフト</span>
+                    <span id="confirmShiftType" class="font-semibold text-tsunagu-blue"></span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-gray-600">記録予定時刻</span>
+                    <span id="confirmTargetTime" class="font-semibold text-gray-900"></span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-gray-600">現在の状態</span>
+                    <span id="confirmCurrentStatus" class="font-semibold text-gray-900"></span>
+                </div>
+                <div id="confirmWorkPreview" class="hidden border-t pt-3">
+                    <div class="flex items-center justify-between text-gray-700">
+                        <span>想定勤務時間</span>
+                        <span id="confirmWorkHours" class="font-semibold"></span>
+                    </div>
+                    <p id="confirmWorkNote" class="text-xs text-orange-600 mt-1"></p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button id="cancelClockAction" class="w-full px-4 py-3 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50">キャンセル</button>
+                <button id="confirmClockAction" class="w-full px-4 py-3 rounded-lg bg-tsunagu-blue text-white font-semibold hover:bg-blue-700 shadow">確定して記録</button>
+            </div>
         </div>
     </div>
 

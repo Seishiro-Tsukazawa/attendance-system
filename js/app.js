@@ -346,14 +346,15 @@ const api = {
 const auth = {
     async login(employeeNumber) {
         const employee = await api.getEmployeeByNumber(employeeNumber);
-        
+
         if (!employee || employee.status !== 'active') {
             return { success: false, message: '社員番号が見つからないか、無効なアカウントです' };
         }
-        
+
         app.currentUser = employee;
         localStorage.setItem('currentUser', JSON.stringify(employee));
-        
+        localStorage.setItem('lastEmployeeNumber', employeeNumber);
+
         // ログイン後に有給自動付与チェックを実行
         await this.checkAndGrantPaidLeave(employee);
         
@@ -515,6 +516,57 @@ function updateClock() {
     if (timeEl) timeEl.textContent = timeStr;
     if (dateEl) dateEl.textContent = dateStr;
 }
+
+// ログイン補助
+const loginAssistant = {
+    lastEmployeeNumber: null,
+
+    init() {
+        const stored = localStorage.getItem('lastEmployeeNumber');
+        const badge = document.getElementById('lastEmployeeNumberBadge');
+        const useBtn = document.getElementById('useLastEmployeeBtn');
+        const input = document.getElementById('employeeNumber');
+
+        if (stored) {
+            this.lastEmployeeNumber = stored;
+            if (badge) {
+                badge.textContent = `前回: ${stored}`;
+                badge.classList.remove('hidden');
+            }
+            if (useBtn) {
+                useBtn.classList.remove('hidden');
+                useBtn.addEventListener('click', () => {
+                    input.value = stored;
+                    input.focus();
+                    this.validate(input.value);
+                });
+            }
+            if (input && !input.value) {
+                input.value = stored;
+            }
+        }
+
+        if (input) {
+            input.addEventListener('input', (e) => this.validate(e.target.value));
+            this.validate(input.value);
+        }
+    },
+
+    validate(value) {
+        const validationEl = document.getElementById('employeeNumberValidation');
+        const hint = document.getElementById('employeeNumberHint');
+        if (!validationEl) return;
+
+        const isValid = /^\d{3,}$/.test((value || '').trim());
+        validationEl.textContent = isValid ? '入力形式 OK' : '半角数字で3桁以上入力してください';
+        validationEl.className = `text-xs ${isValid ? 'text-green-600' : 'text-red-600'}`;
+
+        if (hint) {
+            hint.classList.toggle('text-green-700', isValid);
+        }
+        return isValid;
+    }
+};
 
 // 打刻処理
 const clock = {
@@ -722,6 +774,60 @@ const clock = {
     }
 };
 
+// 打刻前確認モーダル
+const clockConfirm = {
+    action: null,
+
+    open(action) {
+        this.action = action;
+        const modal = document.getElementById('clockConfirmModal');
+        const shift = document.querySelector('input[name="shiftType"]:checked')?.value || '-';
+        const currentTime = utils.getCurrentTime();
+        const statusText = app.todayAttendance
+            ? `出勤: ${utils.formatTime(app.todayAttendance.clock_in)}${app.todayAttendance.clock_out ? ` / 退勤: ${utils.formatTime(app.todayAttendance.clock_out)}` : ''}`
+            : 'まだ打刻がありません';
+
+        document.getElementById('clockConfirmTitle').textContent = action === 'clockIn' ? '出勤を記録しますか？' : '退勤を記録しますか？';
+        document.getElementById('confirmShiftType').textContent = shift;
+        document.getElementById('confirmTargetTime').textContent = `${currentTime} に記録`; 
+        document.getElementById('confirmCurrentStatus').textContent = statusText;
+
+        const workPreview = document.getElementById('confirmWorkPreview');
+        const workHoursEl = document.getElementById('confirmWorkHours');
+        const workNoteEl = document.getElementById('confirmWorkNote');
+
+        if (action === 'clockOut' && app.todayAttendance?.clock_in) {
+            const preview = utils.calculateWorkHours(
+                utils.formatTime(app.todayAttendance.clock_in),
+                currentTime
+            );
+            workHoursEl.textContent = `${preview.workHours}時間（休憩 ${preview.breakMinutes}分控除後）`;
+            workNoteEl.textContent = preview.workHours >= 7.5 ? '残業ラインが近いため、内容を確認してください。' : '';
+            workPreview.classList.remove('hidden');
+        } else {
+            workPreview.classList.add('hidden');
+            workHoursEl.textContent = '';
+            workNoteEl.textContent = '';
+        }
+
+        modal.classList.remove('hidden');
+    },
+
+    close() {
+        document.getElementById('clockConfirmModal').classList.add('hidden');
+        this.action = null;
+    },
+
+    async confirm() {
+        if (this.action === 'clockIn') {
+            await clock.clockIn();
+        } else if (this.action === 'clockOut') {
+            await clock.clockOut();
+        }
+        this.close();
+    }
+};
+
 // 勤怠一覧
 const attendance = {
     async loadAttendance() {
@@ -765,7 +871,7 @@ const attendance = {
         }
         
         noDataMsg.classList.add('hidden');
-        
+
         const html = app.filteredAttendance.map(att => {
             // employee_idから従業員名を取得
             const employee = app.allEmployees.find(e => e.id === att.employee_id);
@@ -787,7 +893,7 @@ const attendance = {
             const nameColumn = app.currentUser.role === 'admin' 
                 ? `<td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium">${employeeName}</td>`
                 : '';
-            
+
             return `
             <tr class="hover:bg-gray-50">
                 <td class="px-2 md:px-4 py-2 md:py-3 text-sm sticky-col-left" style="position: sticky; left: 0; z-index: 5; background-color: white;">
@@ -798,6 +904,9 @@ const attendance = {
                         <button onclick="attendance.deleteAttendance('${att.id}')" class="text-red-600 hover:text-red-800 p-1" title="削除">
                             <i class="fas fa-trash text-sm md:text-base"></i>
                         </button>
+                        <button onclick="attendance.toggleDetail('${att.id}')" class="md:hidden text-gray-600 hover:text-gray-800 p-1" title="詳細表示">
+                            <i class="fas fa-ellipsis-h"></i>
+                        </button>
                     </div>
                 </td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm">
@@ -807,8 +916,8 @@ const attendance = {
                 ${nameColumn}
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm">
                     <span class="px-1.5 md:px-2 py-0.5 md:py-1 rounded text-xs font-medium ${
-                        att.shift_type === '早番' ? 'bg-yellow-100 text-yellow-800' : 
-                        att.shift_type === '遅番' ? 'bg-blue-100 text-blue-800' : 
+                        att.shift_type === '早番' ? 'bg-yellow-100 text-yellow-800' :
+                        att.shift_type === '遅番' ? 'bg-blue-100 text-blue-800' :
                         'bg-red-100 text-red-800'
                     }">
                         ${att.shift_type}
@@ -816,17 +925,35 @@ const attendance = {
                 </td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-green-600 font-medium">${utils.formatTime(att.clock_in)}</td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-red-600 font-medium">${utils.formatTime(att.clock_out)}</td>
-                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm">${att.break_minutes}分</td>
-                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-bold">${att.work_hours}時間</td>
+                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm hidden md:table-cell">${att.break_minutes}分</td>
+                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-bold hidden md:table-cell">${att.work_hours}時間</td>
                 <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-bold ${att.overtime_hours > 0 ? 'text-orange-600' : 'text-gray-400'}">${att.overtime_hours || 0}時間</td>
-                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium text-red-600">${compensatoryInfo}</td>
-                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-gray-600">${att.note || '-'}</td>
+                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium text-red-600 hidden md:table-cell">${compensatoryInfo}</td>
+                <td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-gray-600 hidden md:table-cell">${att.note || '-'}</td>
+            </tr>
+            <tr id="att-detail-${att.id}" class="md:hidden bg-gray-50 hidden">
+                <td colspan="10" class="px-4 py-3 text-xs text-gray-700">
+                    <div class="flex flex-wrap gap-3">
+                        <span class="px-2 py-1 rounded bg-white shadow-sm">休憩 ${att.break_minutes}分</span>
+                        <span class="px-2 py-1 rounded bg-white shadow-sm">勤務 ${att.work_hours}時間</span>
+                        <span class="px-2 py-1 rounded bg-white shadow-sm">残業 ${att.overtime_hours || 0}時間</span>
+                        <span class="px-2 py-1 rounded bg-white shadow-sm">振替 ${compensatoryInfo}</span>
+                    </div>
+                    <p class="mt-2 text-gray-600">備考: ${att.note || 'なし'}</p>
+                </td>
             </tr>
         `}).join('');
         
         tbody.innerHTML = html;
         this.updateMonthlySummary();
         this.checkOvertimeAlert();
+    },
+
+    toggleDetail(id) {
+        const row = document.getElementById(`att-detail-${id}`);
+        if (row) {
+            row.classList.toggle('hidden');
+        }
     },
     
     updateMonthlySummary() {
@@ -945,8 +1072,16 @@ const attendance = {
         if (targetMonth) {
             filtered = filtered.filter(att => att.date.startsWith(targetMonth));
         }
-        
+
         app.filteredAttendance = filtered;
+        const monthLabel = targetMonth ? `${targetMonth.split('-')[0]}年${targetMonth.split('-')[1]}月` : '全期間';
+        const employeeLabel = app.currentUser.role === 'admin'
+            ? (selectedEmployeeId ? (app.allEmployees.find(e => e.id === selectedEmployeeId)?.name || '選択中の従業員') : '全員')
+            : '自分のみ';
+        const summary = document.getElementById('attendanceFilterSummary');
+        if (summary) {
+            summary.querySelector('span').textContent = `${employeeLabel} / ${monthLabel} を表示中`;
+        }
         this.renderTable();
     },
     
@@ -2193,6 +2328,7 @@ async function init() {
 
 // イベントリスナー
 document.addEventListener('DOMContentLoaded', () => {
+    loginAssistant.init();
     init();
     
     // PWAモード検知とリロードボタン表示
@@ -2272,9 +2408,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // 打刻ボタン
-    document.getElementById('clockInBtn').addEventListener('click', () => clock.clockIn());
-    document.getElementById('clockOutBtn').addEventListener('click', () => clock.clockOut());
+    document.getElementById('clockInBtn').addEventListener('click', () => clockConfirm.open('clockIn'));
+    document.getElementById('clockOutBtn').addEventListener('click', () => clockConfirm.open('clockOut'));
     document.getElementById('resetClockBtn').addEventListener('click', () => clock.resetClock());
+
+    document.getElementById('confirmClockAction').addEventListener('click', () => clockConfirm.confirm());
+    document.getElementById('cancelClockAction').addEventListener('click', () => clockConfirm.close());
+    document.getElementById('closeClockConfirm').addEventListener('click', () => clockConfirm.close());
     
     // ダッシュボードフィルター
     document.getElementById('dashboardFilterBtn').addEventListener('click', () => dashboard.updateDashboard());

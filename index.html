@@ -194,26 +194,30 @@
     <div id="mainApp" class="hidden min-h-screen">
         <!-- ヘッダー -->
         <header class="gradient-bg text-white shadow-lg">
-            <div class="container mx-auto px-4 py-3">
-                <div class="flex items-center justify-between flex-wrap gap-3">
-                    <div class="flex items-center space-x-3">
-                        <img src="images/sitelogo.png" alt="つなぐいわてまち" class="h-10 md:h-12 bg-white rounded px-2">
-                        <div>
+            <div class="container mx-auto px-3 py-2 md:px-4 md:py-3">
+                <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <img src="images/pwa-icon.png" alt="つなぐいわてまち" class="h-10 w-10 md:h-12 md:w-12 bg-white rounded-lg p-1">
+                        <div class="leading-tight">
                             <h1 class="text-base md:text-xl font-bold">出退勤管理システム</h1>
-                            <p class="text-xs md:text-sm opacity-90">
-                                <i class="fas fa-user-circle mr-1"></i>
+                            <p class="hidden sm:flex items-center text-xs md:text-sm opacity-90 gap-1">
+                                <i class="fas fa-user-circle"></i>
                                 <span id="currentUserName"></span>
                             </p>
                         </div>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <button id="reloadBtn" class="bg-white/20 hover:bg-white/30 px-3 py-2 md:px-4 rounded-lg transition text-sm md:text-base hidden">
+                    <div class="flex items-center gap-2 text-xs sm:text-sm">
+                        <div class="flex items-center gap-1 bg-white/20 px-2 py-1 rounded-lg sm:hidden">
+                            <i class="fas fa-user-circle"></i>
+                            <span id="currentUserNameMobile" class="font-medium"></span>
+                        </div>
+                        <button id="reloadBtn" class="hidden sm:inline-flex items-center bg-white/20 hover:bg-white/30 px-3 py-2 md:px-4 rounded-lg transition text-sm md:text-base">
                             <i class="fas fa-sync-alt"></i>
-                            <span class="hidden sm:inline ml-2">更新</span>
+                            <span class="hidden md:inline ml-2">更新</span>
                         </button>
-                        <button id="logoutBtn" class="bg-white/20 hover:bg-white/30 px-3 py-2 md:px-4 rounded-lg transition text-sm md:text-base">
+                        <button id="logoutBtn" class="inline-flex items-center bg-white/20 hover:bg-white/30 px-3 py-2 md:px-4 rounded-lg transition text-xs sm:text-base">
                             <i class="fas fa-sign-out-alt"></i>
-                            <span class="hidden sm:inline ml-2">ログアウト</span>
+                            <span class="ml-2">ログアウト</span>
                         </button>
                     </div>
                 </div>

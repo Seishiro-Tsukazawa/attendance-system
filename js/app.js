@@ -2411,6 +2411,8 @@ async function init() {
     if (auth.checkAuth()) {
         showScreen('main');
         document.getElementById('currentUserName').textContent = app.currentUser.name;
+        const mobileUserName = document.getElementById('currentUserNameMobile');
+        if (mobileUserName) mobileUserName.textContent = app.currentUser.name;
         
         // 管理者の場合は従業員管理タブを表示
         if (app.currentUser.role === 'admin') {

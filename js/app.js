@@ -2212,20 +2212,34 @@ const employees = {
 
 // 有給休暇管理
 const paidLeave = {
+    sortRequestsByNewest(a, b) {
+        const requestDateDiff = new Date(b.request_date) - new Date(a.request_date);
+        if (requestDateDiff !== 0) return requestDateDiff;
+
+        if (a.created_at || b.created_at) {
+            const createdDiff = new Date(b.created_at || b.request_date) - new Date(a.created_at || a.request_date);
+            if (createdDiff !== 0) return createdDiff;
+        }
+
+        return (b.leave_date || '').localeCompare(a.leave_date || '');
+    },
+
     async loadPaidLeave() {
         app.allEmployees = await api.getEmployees();
         const paidLeaves = await api.getPaidLeaves();
         const leaveRequests = await api.getLeaveRequests();
-        
+
         // 一般ユーザーの場合は自分のデータのみにフィルタリング
         if (app.currentUser.role !== 'admin') {
             app.paidLeaves = paidLeaves.filter(pl => pl.employee_id === app.currentUser.id);
-            app.leaveRequests = leaveRequests.filter(lr => lr.employee_id === app.currentUser.id);
+            app.leaveRequests = leaveRequests
+                .filter(lr => lr.employee_id === app.currentUser.id)
+                .sort(this.sortRequestsByNewest);
         } else {
             app.paidLeaves = paidLeaves;
-            app.leaveRequests = leaveRequests;
+            app.leaveRequests = [...leaveRequests].sort(this.sortRequestsByNewest);
         }
-        
+
         this.updateSummary();
         this.renderRequests();
     },
@@ -2277,7 +2291,10 @@ const paidLeave = {
         }
 
         noDataMsg.classList.add('hidden');
-        
+
+        // 並び順を新しい申請日順で固定
+        const sortedRequests = [...filteredRequests].sort(this.sortRequestsByNewest);
+
         // 管理者かどうかで表示制御
         const isAdmin = app.currentUser.role === 'admin';
         const nameHeader = document.getElementById('leaveRequestNameHeader');
@@ -2292,10 +2309,10 @@ const paidLeave = {
             actionHeader.style.display = '';
         }
         
-        const html = filteredRequests.map(request => {
+        const html = sortedRequests.map(request => {
             const employee = app.allEmployees.find(e => e.id === request.employee_id);
             const employeeName = employee ? employee.name : '不明';
-            
+
             const statusBadge = {
                 'pending': '<span class="px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">承認待ち</span>',
                 'approved': '<span class="px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">承認済み</span>',
@@ -2366,7 +2383,7 @@ const paidLeave = {
         tbody.innerHTML = html;
 
         if (cardList) {
-            const cardHtml = filteredRequests.map(request => {
+            const cardHtml = sortedRequests.map(request => {
                 const employee = app.allEmployees.find(e => e.id === request.employee_id);
                 const employeeName = employee ? employee.name : '不明';
 

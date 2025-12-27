@@ -1742,6 +1742,7 @@ const compensatoryManagement = {
     
     renderTable(filterEmployeeId = null) {
         const tbody = document.getElementById('compensatoryTableBody');
+        const cardList = document.getElementById('compensatoryCardList');
         const noDataMsg = document.getElementById('noCompensatoryMessage');
         
         // フィルタリング
@@ -1754,10 +1755,11 @@ const compensatoryManagement = {
         
         if (leavesToDisplay.length === 0) {
             tbody.innerHTML = '';
+            if (cardList) cardList.innerHTML = '';
             noDataMsg.classList.remove('hidden');
             return;
         }
-        
+
         noDataMsg.classList.add('hidden');
         
         const html = leavesToDisplay.map(leave => {
@@ -1830,6 +1832,69 @@ const compensatoryManagement = {
         `}).join('');
         
         tbody.innerHTML = html;
+
+        if (cardList) {
+            const cardHtml = leavesToDisplay.map(leave => {
+                const employee = app.allEmployees.find(e => e.id === leave.employee_id);
+                const employeeName = employee ? employee.name : '不明';
+
+                const attendance = app.allAttendance.find(att =>
+                    att.employee_id === leave.employee_id &&
+                    att.date === leave.work_date &&
+                    ['休日出勤', '休日出張'].includes(att.shift_type)
+                );
+
+                const clockIn = attendance ? utils.formatTime(attendance.clock_in) : '-';
+                const clockOut = attendance ? utils.formatTime(attendance.clock_out) : '-';
+
+                const substituteInfo = leave.substitute_days > 0
+                    ? `${leave.substitute_days}日`
+                    : `${leave.substitute_hours}時間`;
+
+                const statusBadge = leave.used
+                    ? '<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-800">使用済</span>'
+                    : '<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-800">未使用</span>';
+
+                return `
+                <div class="bg-white rounded-xl border border-gray-200 p-3 flex flex-col gap-2">
+                    <div class="flex items-start gap-2">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                                <span>${utils.formatDate(leave.work_date)}</span>
+                                ${statusBadge}
+                            </div>
+                            ${app.currentUser.role === 'admin' ? `<div class="text-[11px] text-gray-500 mt-1">${employeeName}</div>` : ''}
+                            <div class="mt-2 text-[11px] text-gray-600 flex flex-wrap gap-2">
+                                <span class="flex items-center gap-1"><i class="far fa-clock"></i>${clockIn} - ${clockOut}</span>
+                                <span class="flex items-center gap-1"><i class="fas fa-briefcase"></i>${leave.work_hours}時間</span>
+                                <span class="flex items-center gap-1 text-red-600"><i class="fas fa-exchange-alt"></i>${substituteInfo}</span>
+                            </div>
+                        </div>
+                        <button onclick="compensatoryManagement.toggleUsed('${leave.id}', ${!leave.used})"
+                                class="px-2 py-1 text-xs font-semibold rounded-lg ${leave.used ? 'bg-gray-700 text-white hover:bg-gray-800' : 'bg-green-600 text-white hover:bg-green-700'}" title="状態切替">
+                            ${leave.used ? '未使用に戻す' : '使用済にする'}
+                        </button>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        ${leave.used ? `
+                        <div class="flex items-center gap-2">
+                            <input type="date"
+                                   id="usedDate_${leave.id}"
+                                   value="${leave.used_date || ''}"
+                                   class="flex-1 px-2 py-2 border border-gray-300 rounded text-xs">
+                            <button onclick="compensatoryManagement.saveUsedDate('${leave.id}')"
+                                    class="px-3 py-2 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1">
+                                <i class="fas fa-save"></i><span>保存</span>
+                            </button>
+                        </div>
+                        ` : `<div class="text-[11px] text-gray-500">使用日を入力するには「使用済」に変更してください。</div>`}
+                    </div>
+                </div>
+                `;
+            }).join('');
+
+            cardList.innerHTML = cardHtml;
+        }
     },
     
     async toggleUsed(leaveId, newUsedStatus) {
@@ -2188,6 +2253,7 @@ const paidLeave = {
     
     renderRequests() {
         const tbody = document.getElementById('leaveRequestTableBody');
+        const cardList = document.getElementById('leaveRequestCardList');
         const noDataMsg = document.getElementById('noLeaveRequestMessage');
         const statusFilter = document.getElementById('leaveStatusFilter').value;
         
@@ -2205,10 +2271,11 @@ const paidLeave = {
         
         if (filteredRequests.length === 0) {
             tbody.innerHTML = '';
+            if (cardList) cardList.innerHTML = '';
             noDataMsg.classList.remove('hidden');
             return;
         }
-        
+
         noDataMsg.classList.add('hidden');
         
         // 管理者かどうかで表示制御
@@ -2297,6 +2364,53 @@ const paidLeave = {
         `}).join('');
         
         tbody.innerHTML = html;
+
+        if (cardList) {
+            const cardHtml = filteredRequests.map(request => {
+                const employee = app.allEmployees.find(e => e.id === request.employee_id);
+                const employeeName = employee ? employee.name : '不明';
+
+                const statusBadge = {
+                    'pending': '<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-yellow-100 text-yellow-800">承認待ち</span>',
+                    'approved': '<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-800">承認済み</span>',
+                    'rejected': '<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-800">却下</span>'
+                }[request.status] || '-';
+
+                let actionButton = '';
+                if (isAdmin) {
+                    if (request.status === 'pending') {
+                        actionButton = `<button onclick=\"paidLeave.approveRequest('${request.id}')\" class=\"px-3 py-2 text-xs font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 flex items-center gap-1\"><i class=\"fas fa-check\"></i><span>承認</span></button>`;
+                    } else if (request.status === 'approved') {
+                        actionButton = `<button onclick=\"paidLeave.cancelApproval('${request.id}')\" class=\"px-3 py-2 text-xs font-semibold rounded-lg bg-orange-500 text-white hover:bg-orange-600 flex items-center gap-1\"><i class=\"fas fa-undo\"></i><span>取消</span></button>`;
+                    }
+                } else if (request.status === 'pending') {
+                    actionButton = `<button onclick=\"paidLeave.cancelRequest('${request.id}')\" class=\"px-3 py-2 text-xs font-semibold rounded-lg bg-red-500 text-white hover:bg-red-600 flex items-center gap-1\"><i class=\"fas fa-times\"></i><span>取消</span></button>`;
+                }
+
+                return `
+                <div class="bg-white rounded-xl border border-gray-200 p-3 flex flex-col gap-2">
+                    <div class="flex items-start gap-2">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                                <span>${utils.formatDate(request.leave_date)}</span>
+                                ${statusBadge}
+                            </div>
+                            ${isAdmin ? `<div class="text-[11px] text-gray-500 mt-1">${employeeName}</div>` : ''}
+                            <div class="mt-2 text-[11px] text-gray-600 flex flex-wrap gap-2">
+                                <span class="flex items-center gap-1"><i class="fas fa-file-alt"></i>${utils.formatDate(request.request_date)} 申請</span>
+                                <span class="flex items-center gap-1"><i class="fas fa-sun"></i>${request.leave_type}</span>
+                                <span class="flex items-center gap-1"><i class="fas fa-umbrella-beach"></i>${request.leave_days}日</span>
+                            </div>
+                        </div>
+                        ${actionButton ? `<div class="shrink-0">${actionButton}</div>` : ''}
+                    </div>
+                    <div class="text-[11px] text-gray-600">理由: ${request.reason || 'なし'}</div>
+                </div>
+                `;
+            }).join('');
+
+            cardList.innerHTML = cardHtml;
+        }
     },
     
     async submitRequest(event) {

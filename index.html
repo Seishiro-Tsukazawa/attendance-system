@@ -562,7 +562,7 @@
                             </div>
                         </div>
                         
-                        <div class="overflow-x-auto responsive-table" style="position: relative;">
+                        <div class="hidden md:block overflow-x-auto responsive-table" style="position: relative;">
                             <table class="w-full text-sm md:text-base" style="min-width: 1000px;">
                                 <thead class="bg-gray-100">
                                     <tr>
@@ -582,6 +582,8 @@
                                 </tbody>
                             </table>
                         </div>
+
+                        <div id="compensatoryCardList" class="md:hidden grid grid-cols-1 gap-3"></div>
                         
                         <div id="noCompensatoryMessage" class="text-center py-8 text-gray-500 hidden">
                             <i class="fas fa-inbox text-4xl mb-3"></i>
@@ -660,7 +662,7 @@
                             </select>
                         </div>
                         
-                        <div class="overflow-x-auto" style="position: relative;">
+                        <div class="hidden md:block overflow-x-auto" style="position: relative;">
                             <table class="w-full" style="min-width: 800px;">
                                 <thead class="bg-gray-100">
                                     <tr>
@@ -679,6 +681,8 @@
                                 </tbody>
                             </table>
                         </div>
+
+                        <div id="leaveRequestCardList" class="md:hidden grid grid-cols-1 gap-3"></div>
                         
                         <div id="noLeaveRequestMessage" class="text-center py-8 text-gray-500 hidden">
                             <i class="fas fa-inbox text-4xl mb-3"></i>

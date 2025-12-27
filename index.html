@@ -128,6 +128,31 @@
         #pullToRefresh {
             transition: height 0.3s ease, opacity 0.3s ease;
         }
+        /* 時計&残業カード調整 */
+        .clock-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            align-items: stretch;
+        }
+        .clock-card-title {
+            line-height: 1.2;
+        }
+        .clock-card-subtext {
+            line-height: 1.4;
+        }
+        @media (max-width: 480px) {
+            .clock-grid {
+                gap: 0.6rem;
+            }
+            .clock-card-title {
+                font-size: 0.7rem !important;
+            }
+            .clock-card-value {
+                font-size: 1.5rem !important;
+            }
+            .clock-card-subtext {
+                font-size: 0.7rem !important;
+            }
+        }
     </style>
 </head>
 <body class="bg-gray-50">
@@ -259,20 +284,20 @@
             <div id="clockView" class="view-content">
                 <div class="max-w-2xl mx-auto">
                     <!-- 現在時刻＆今月の残業 -->
-                    <div class="grid grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
+                    <div class="clock-grid grid grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
                         <div class="bg-white rounded-xl shadow-lg p-4 md:p-5 text-center compact-card min-w-0">
-                            <div class="text-gray-600 mb-1 text-xs md:text-sm tracking-wide">現在時刻</div>
-                            <div id="currentTime" class="text-2xl md:text-4xl font-bold text-gray-800 mb-1"></div>
-                            <div id="currentDate" class="text-sm md:text-lg text-gray-600"></div>
+                            <div class="text-gray-600 mb-1 text-xs md:text-sm tracking-wide clock-card-title">現在時刻</div>
+                            <div id="currentTime" class="text-2xl md:text-4xl font-bold text-gray-800 mb-1 clock-card-value"></div>
+                            <div id="currentDate" class="text-sm md:text-lg text-gray-600 clock-card-subtext"></div>
                         </div>
                         <div class="bg-white rounded-xl shadow-lg p-4 md:p-5 compact-card min-w-0">
-                            <div class="flex items-center justify-between text-xs md:text-sm text-gray-600 mb-1">
+                            <div class="flex items-center justify-between gap-2 flex-wrap text-xs md:text-sm text-gray-600 mb-1 clock-card-title">
                                 <span class="flex items-center gap-2"><i class="fas fa-business-time text-orange-500"></i>今月の残業</span>
-                                <span id="monthlyOvertimeRange" class="text-[11px] md:text-xs text-gray-500"></span>
+                                <span id="monthlyOvertimeRange" class="text-[11px] md:text-xs text-gray-500 clock-card-subtext"></span>
                             </div>
-                            <div class="flex items-baseline gap-3">
-                                <div id="monthlyOvertimeValue" class="text-2xl md:text-3xl font-bold text-orange-600">--時間</div>
-                                <p class="text-[11px] md:text-xs text-gray-500">当月の退勤済みデータから集計</p>
+                            <div class="flex items-baseline gap-2 flex-wrap leading-tight">
+                                <div id="monthlyOvertimeValue" class="text-2xl md:text-3xl font-bold text-orange-600 clock-card-value">--時間</div>
+                                <p class="text-[11px] md:text-xs text-gray-500 clock-card-subtext">当月の退勤済みデータから集計</p>
                             </div>
                         </div>
                     </div>

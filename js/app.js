@@ -963,6 +963,8 @@ const attendance = {
             tbody.innerHTML = '';
             if (cardList) cardList.innerHTML = '';
             noDataMsg.classList.remove('hidden');
+            this.updateMonthlySummary();
+            this.checkOvertimeAlert();
             return;
         }
 
@@ -2010,29 +2012,46 @@ const exportData = {
     loadEmployeeCheckboxes() {
         const container = document.getElementById('employeeCheckboxList');
         const activeEmployees = app.allEmployees.filter(e => e.status === 'active');
-        
-        const html = activeEmployees.map(emp => `
-            <label class="flex items-center cursor-pointer hover:bg-gray-50 p-2 rounded">
-                <input type="checkbox" class="employee-checkbox w-4 h-4 text-tsunagu-blue border-gray-300 rounded focus:ring-tsunagu-blue mr-2" 
-                       value="${emp.id}" checked>
-                <span class="text-sm md:text-base">${emp.name}</span>
-            </label>
-        `).join('');
-        
-        container.innerHTML = html;
-        
-        // 全員選択チェックボックスのイベント
-        document.getElementById('selectAllEmployees').addEventListener('change', (e) => {
-            const checkboxes = document.querySelectorAll('.employee-checkbox');
-            checkboxes.forEach(cb => cb.checked = e.target.checked);
-        });
-        
-        // 個別チェックボックスの変更で全員選択の状態を更新
-        container.addEventListener('change', () => {
-            const checkboxes = document.querySelectorAll('.employee-checkbox');
-            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-            document.getElementById('selectAllEmployees').checked = allChecked;
-        });
+        const selectAllWrapper = document.getElementById('selectAllEmployees')?.closest('div');
+
+        if (app.currentUser.role === 'admin') {
+            const html = activeEmployees.map(emp => `
+                <label class="flex items-center cursor-pointer hover:bg-gray-50 p-2 rounded">
+                    <input type="checkbox" class="employee-checkbox w-4 h-4 text-tsunagu-blue border-gray-300 rounded focus:ring-tsunagu-blue mr-2"
+                           value="${emp.id}" checked>
+                    <span class="text-sm md:text-base">${emp.name}</span>
+                </label>
+            `).join('');
+
+            container.innerHTML = html;
+
+            if (selectAllWrapper) selectAllWrapper.classList.remove('hidden');
+
+            // 全員選択チェックボックスのイベント
+            document.getElementById('selectAllEmployees').addEventListener('change', (e) => {
+                const checkboxes = document.querySelectorAll('.employee-checkbox');
+                checkboxes.forEach(cb => cb.checked = e.target.checked);
+            });
+
+            // 個別チェックボックスの変更で全員選択の状態を更新
+            container.addEventListener('change', () => {
+                const checkboxes = document.querySelectorAll('.employee-checkbox');
+                const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+                document.getElementById('selectAllEmployees').checked = allChecked;
+            });
+        } else {
+            const self = activeEmployees.find(emp => emp.id === app.currentUser.id);
+            const html = self ? `
+                <label class="flex items-center p-2 rounded bg-gray-50">
+                    <input type="checkbox" class="employee-checkbox w-4 h-4 text-tsunagu-blue border-gray-300 rounded focus:ring-tsunagu-blue mr-2"
+                           value="${self.id}" checked disabled>
+                    <span class="text-sm md:text-base">${self.name}（自分のみ）</span>
+                </label>
+            ` : '<p class="text-sm text-gray-500">有効な従業員データがありません</p>';
+
+            container.innerHTML = html;
+            if (selectAllWrapper) selectAllWrapper.classList.add('hidden');
+        }
     },
     
     async exportCSV() {
@@ -2044,9 +2063,13 @@ const exportData = {
             return;
         }
         
-        // 選択された従業員IDを取得
-        const selectedEmployeeIds = Array.from(document.querySelectorAll('.employee-checkbox:checked'))
+        // 選択された従業員IDを取得（一般従業員は自分のみ固定）
+        let selectedEmployeeIds = Array.from(document.querySelectorAll('.employee-checkbox:checked'))
             .map(cb => cb.value);
+
+        if (app.currentUser.role !== 'admin') {
+            selectedEmployeeIds = [app.currentUser.id.toString()];
+        }
         
         if (selectedEmployeeIds.length === 0) {
             utils.showToast('従業員を1人以上選択してください', 'error');
@@ -2637,9 +2660,6 @@ async function init() {
             document.getElementById('clockNavBtn')?.classList.add('hidden');
             document.getElementById('clockView')?.classList.add('hidden');
 
-            // 管理者はデータ出力タブを非表示
-            document.getElementById('exportNavBtn')?.classList.add('hidden');
-            document.getElementById('exportView')?.classList.add('hidden');
         }
 
         // 時計開始

@@ -2274,6 +2274,20 @@ const paidLeave = {
         return (b.leave_date || '').localeCompare(a.leave_date || '');
     },
 
+    applyRoleVisibility() {
+        const summarySection = document.getElementById('paidLeaveSummarySection');
+        const requestFormCard = document.getElementById('leaveRequestFormCard');
+        const isAdmin = app.currentUser?.role === 'admin';
+
+        if (isAdmin) {
+            summarySection?.classList.add('hidden');
+            requestFormCard?.classList.add('hidden');
+        } else {
+            summarySection?.classList.remove('hidden');
+            requestFormCard?.classList.remove('hidden');
+        }
+    },
+
     async loadPaidLeave() {
         app.allEmployees = await api.getEmployees();
         const paidLeaves = await api.getPaidLeaves();
@@ -2290,16 +2304,8 @@ const paidLeave = {
             app.leaveRequests = [...leaveRequests].sort(this.sortRequestsByNewest);
         }
 
-        // 管理者はサマリーカードと申請フォームを非表示
-        const summarySection = document.getElementById('paidLeaveSummarySection');
-        const requestFormCard = document.getElementById('leaveRequestFormCard');
-        if (app.currentUser.role === 'admin') {
-            summarySection?.classList.add('hidden');
-            requestFormCard?.classList.add('hidden');
-        } else {
-            summarySection?.classList.remove('hidden');
-            requestFormCard?.classList.remove('hidden');
-        }
+        // ロールに応じてサマリーカードと申請フォームの表示を制御
+        this.applyRoleVisibility();
 
         this.updateSummary();
         this.renderRequests();
@@ -2665,6 +2671,9 @@ async function init() {
         document.getElementById('currentUserName').textContent = app.currentUser.name;
         const mobileUserName = document.getElementById('currentUserNameMobile');
         if (mobileUserName) mobileUserName.textContent = app.currentUser.name;
+
+        // ロールに応じた有給ビューの表示を事前に適用
+        paidLeave.applyRoleVisibility();
 
         // 管理者の場合は従業員管理タブを表示
         if (app.currentUser.role === 'admin') {

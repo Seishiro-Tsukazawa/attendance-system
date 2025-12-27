@@ -946,17 +946,19 @@ const attendance = {
     
     renderTable() {
         const tbody = document.getElementById('attendanceTableBody');
+        const cardList = document.getElementById('attendanceCardList');
         const noDataMsg = document.getElementById('noDataMessage');
-        
+
         if (app.filteredAttendance.length === 0) {
             tbody.innerHTML = '';
+            if (cardList) cardList.innerHTML = '';
             noDataMsg.classList.remove('hidden');
             return;
         }
-        
+
         noDataMsg.classList.add('hidden');
 
-        const html = app.filteredAttendance.map(att => {
+        const tableHtml = app.filteredAttendance.map(att => {
             // employee_idから従業員名を取得
             const employee = app.allEmployees.find(e => e.id === att.employee_id);
             const employeeName = employee ? employee.name : '不明';
@@ -969,12 +971,20 @@ const attendance = {
                     compensatoryInfo = `${comp.hours}時間`;
                 }
             }
-            
+
             // 日付を短縮表示（モバイル対応）
             const shortDate = att.date.split('-').slice(1).join('/'); // MM/DD形式
-            
+            const formattedDate = utils.formatDate(att.date);
+
+            const shiftBadgeClass =
+                att.shift_type === '早番' ? 'bg-yellow-100 text-yellow-800' :
+                att.shift_type === '遅番' ? 'bg-blue-100 text-blue-800' :
+                att.shift_type === '出張' ? 'bg-purple-100 text-purple-800' :
+                att.shift_type === '休日出張' ? 'bg-purple-50 text-purple-900 border border-purple-200' :
+                'bg-red-100 text-red-800';
+
             // 名前列は管理者のみ表示
-            const nameColumn = app.currentUser.role === 'admin' 
+            const nameColumn = app.currentUser.role === 'admin'
                 ? `<td class="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium">${employeeName}</td>`
                 : '';
 
@@ -1029,8 +1039,71 @@ const attendance = {
                 </td>
             </tr>
         `}).join('');
-        
-        tbody.innerHTML = html;
+
+        tbody.innerHTML = tableHtml;
+
+        if (cardList) {
+            const cardHtml = app.filteredAttendance.map(att => {
+                const employee = app.allEmployees.find(e => e.id === att.employee_id);
+                const employeeName = employee ? employee.name : '不明';
+                let compensatoryInfo = '-';
+                if (['休日出勤', '休日出張'].includes(att.shift_type) && att.work_hours > 0) {
+                    const comp = utils.calculateCompensatory(att.work_hours);
+                    compensatoryInfo = comp.days > 0 ? `${comp.days}日` : `${comp.hours}時間`;
+                }
+
+                const shiftBadgeClass =
+                    att.shift_type === '早番' ? 'bg-yellow-100 text-yellow-800' :
+                    att.shift_type === '遅番' ? 'bg-blue-100 text-blue-800' :
+                    att.shift_type === '出張' ? 'bg-purple-100 text-purple-800' :
+                    att.shift_type === '休日出張' ? 'bg-purple-50 text-purple-900 border border-purple-200' :
+                    'bg-red-100 text-red-800';
+
+                return `
+                <div class="attendance-card bg-white rounded-xl border border-gray-200 p-3">
+                    <div class="attendance-card-header flex justify-between items-start">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                                <span>${utils.formatDate(att.date)}</span>
+                                <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold ${shiftBadgeClass}">${att.shift_type}</span>
+                            </div>
+                            ${app.currentUser.role === 'admin' ? `<div class="text-[11px] text-gray-500 mt-1">${employeeName}</div>` : ''}
+                            <div class="flex items-center gap-2 mt-2 text-[11px] text-gray-500">
+                                <span class="flex items-center gap-1"><i class="far fa-clock"></i>${att.break_minutes}分休憩</span>
+                                <span class="flex items-center gap-1"><i class="fas fa-exchange-alt"></i>${compensatoryInfo === '-' ? '振替なし' : `振替 ${compensatoryInfo}`}</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1 ml-3">
+                            <button onclick="attendance.editAttendance('${att.id}')" class="p-2 text-blue-600 hover:text-blue-800" title="編集"><i class="fas fa-edit"></i></button>
+                            <button onclick="attendance.deleteAttendance('${att.id}')" class="p-2 text-red-600 hover:text-red-800" title="削除"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 mt-3">
+                        <div class="bg-gray-50 rounded-lg p-2">
+                            <div class="attendance-metric-label text-gray-500 flex items-center gap-1"><i class="fas fa-sign-in-alt"></i>出勤</div>
+                            <div class="attendance-metric-value font-semibold text-green-700 mt-1">${utils.formatTime(att.clock_in)}</div>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-2">
+                            <div class="attendance-metric-label text-gray-500 flex items-center gap-1"><i class="fas fa-sign-out-alt"></i>退勤</div>
+                            <div class="attendance-metric-value font-semibold text-red-700 mt-1">${utils.formatTime(att.clock_out)}</div>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-2">
+                            <div class="attendance-metric-label text-gray-500">勤務時間</div>
+                            <div class="attendance-metric-value font-semibold text-gray-800 mt-1">${att.work_hours}時間</div>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-2">
+                            <div class="attendance-metric-label text-gray-500">残業</div>
+                            <div class="attendance-metric-value font-semibold ${att.overtime_hours > 0 ? 'text-orange-600' : 'text-gray-500'} mt-1">${att.overtime_hours || 0}時間</div>
+                        </div>
+                    </div>
+                    <div class="mt-2 text-[11px] text-gray-600">備考: ${att.note || 'なし'}</div>
+                </div>
+                `;
+            }).join('');
+
+            cardList.innerHTML = cardHtml;
+        }
+
         this.updateMonthlySummary();
         this.checkOvertimeAlert();
     },

@@ -149,8 +149,24 @@
             .clock-card-value {
                 font-size: 1.5rem !important;
             }
-            .clock-card-subtext {
-                font-size: 0.7rem !important;
+        .clock-card-subtext {
+            font-size: 0.7rem !important;
+        }
+        }
+        /* 勤怠一覧カード（モバイル） */
+        .attendance-card {
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+        }
+        .attendance-metric-label {
+            font-size: 0.72rem;
+        }
+        .attendance-metric-value {
+            font-size: 1rem;
+            line-height: 1.4;
+        }
+        @media (max-width: 768px) {
+            .attendance-card-header {
+                gap: 0.75rem;
             }
         }
     </style>
@@ -495,28 +511,31 @@
                     </div>
                     
                     <div class="overflow-x-auto responsive-table" style="position: relative;">
-                        <table class="w-full text-sm md:text-base">
-                            <thead class="bg-gray-100">
-                                <tr>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 sticky-col-left" style="position: sticky; left: 0; z-index: 10; background-color: rgb(243, 244, 246);">操作</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">日付</th>
-                                    <th id="attendanceNameHeader" class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">氏名</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">シフト</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">出勤</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">退勤</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">休憩</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">勤務時間</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">残業時間</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">振替</th>
-                                    <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">備考</th>
-                                </tr>
-                            </thead>
-                            <tbody id="attendanceTableBody" class="divide-y divide-gray-200">
-                                <!-- データはJavaScriptで動的に生成 -->
-                            </tbody>
-                        </table>
+                        <div class="hidden md:block">
+                            <table class="w-full text-sm md:text-base">
+                                <thead class="bg-gray-100">
+                                    <tr>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 sticky-col-left" style="position: sticky; left: 0; z-index: 10; background-color: rgb(243, 244, 246);">操作</th>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">日付</th>
+                                        <th id="attendanceNameHeader" class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">氏名</th>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">シフト</th>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">出勤</th>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">退勤</th>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">休憩</th>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">勤務時間</th>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">残業時間</th>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">振替</th>
+                                        <th class="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 hidden md:table-cell">備考</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="attendanceTableBody" class="divide-y divide-gray-200">
+                                    <!-- データはJavaScriptで動的に生成 -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="attendanceCardList" class="md:hidden grid grid-cols-1 gap-3"></div>
                     </div>
-                    
+
                     <div id="noDataMessage" class="text-center py-8 text-gray-500 hidden">
                         <i class="fas fa-inbox text-4xl mb-3"></i>
                         <p class="text-sm md:text-base">データがありません</p>

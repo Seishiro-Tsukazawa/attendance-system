@@ -138,9 +138,13 @@ const utils = {
         }, 3000);
     },
 
-    // 管理者(000)を従業員選択肢から除外
-    getSelectableEmployees(employees = []) {
-        return employees.filter(emp => emp.employee_number !== '000' && emp.role !== 'admin');
+    // 管理者(000)を従業員選択肢から除外し、原則アクティブな従業員のみ返す
+    getSelectableEmployees(employees = [], { includeInactive = false } = {}) {
+        return employees.filter(emp =>
+            emp.employee_number !== '000' &&
+            emp.role !== 'admin' &&
+            (includeInactive || emp.status === 'active')
+        );
     }
 };
 
@@ -948,7 +952,7 @@ const attendance = {
 
     populateEmployeeFilter() {
         const select = document.getElementById('employeeFilter');
-        const selectableEmployees = utils.getSelectableEmployees(app.allEmployees);
+        const selectableEmployees = utils.getSelectableEmployees(app.allEmployees, { includeInactive: true });
 
         const options = selectableEmployees.map(emp =>
             `<option value="${emp.id}">${emp.name}</option>`
@@ -1724,8 +1728,7 @@ const compensatoryManagement = {
     
     renderEmployeeFilter() {
         const filterSelect = document.getElementById('compensatoryEmployeeFilter');
-        const activeEmployees = utils.getSelectableEmployees(app.allEmployees)
-            .filter(e => e.status === 'active');
+        const activeEmployees = utils.getSelectableEmployees(app.allEmployees);
 
         const options = activeEmployees.map(emp =>
             `<option value="${emp.id}">${emp.name}</option>`
@@ -2024,8 +2027,7 @@ const compensatoryManagement = {
 const exportData = {
     loadEmployeeCheckboxes() {
         const container = document.getElementById('employeeCheckboxList');
-        const activeEmployees = utils.getSelectableEmployees(app.allEmployees)
-            .filter(e => e.status === 'active');
+        const activeEmployees = utils.getSelectableEmployees(app.allEmployees);
         const selectAllWrapper = document.getElementById('selectAllEmployees')?.closest('div');
 
         if (app.currentUser.role === 'admin') {

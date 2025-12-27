@@ -364,6 +364,7 @@ const auth = {
     logout() {
         app.currentUser = null;
         localStorage.removeItem('currentUser');
+        shiftSelection.resetSelection();
         showScreen('login');
     },
     
@@ -568,10 +569,108 @@ const loginAssistant = {
     }
 };
 
+// シフト選択管理
+const shiftSelection = {
+    selectedShift: null,
+    defaultTripHours: { start: '08:30', end: '17:30' },
+
+    init() {
+        this.shiftRadios = Array.from(document.querySelectorAll('input[name="shiftType"]'));
+        this.holidayToggle = document.getElementById('holidayWorkToggle');
+        this.hintEl = document.getElementById('shiftSelectionHint');
+        this.defaultHoursEl = document.getElementById('shiftDefaultHours');
+
+        this.shiftRadios.forEach(radio => {
+            radio.addEventListener('change', () => {
+                this.selectedShift = radio.value;
+                this.updateHint();
+                this.updateDefaultHours();
+                clock.updateButtons();
+            });
+        });
+
+        if (this.holidayToggle) {
+            this.holidayToggle.addEventListener('change', () => {
+                this.updateDefaultHours();
+                clock.updateButtons();
+            });
+        }
+
+        this.updateHint();
+        this.updateDefaultHours();
+    },
+
+    applyAttendanceShift(shiftType) {
+        if (!shiftType) return;
+
+        // 休日出張は出張にチェックし、休日扱いトグルをONにする
+        const normalized = shiftType === '休日出張' ? '出張' : shiftType;
+        const targetRadio = this.shiftRadios.find(radio => radio.value === normalized);
+
+        if (targetRadio) {
+            targetRadio.checked = true;
+            this.selectedShift = normalized;
+
+            if (this.holidayToggle) {
+                const shouldEnableHoliday = shiftType === '休日出張';
+                this.holidayToggle.checked = shouldEnableHoliday;
+            }
+
+            this.updateHint();
+            this.updateDefaultHours();
+        }
+    },
+
+    resetSelection() {
+        this.shiftRadios.forEach(radio => (radio.checked = false));
+        if (this.holidayToggle) {
+            this.holidayToggle.checked = false;
+        }
+        this.selectedShift = null;
+        this.updateHint();
+        this.updateDefaultHours();
+    },
+
+    getCurrentShift() {
+        if (!this.selectedShift) return null;
+        if (this.selectedShift === '出張' && this.holidayToggle?.checked) {
+            return '休日出張';
+        }
+        return this.selectedShift;
+    },
+
+    updateHint() {
+        if (!this.hintEl) return;
+        const hasSelection = Boolean(this.selectedShift);
+        this.hintEl.textContent = hasSelection
+            ? '選択中のシフトで打刻を記録します。'
+            : 'シフトを選択すると打刻ボタンが有効になります。';
+        this.hintEl.classList.toggle('text-red-600', !hasSelection);
+        this.hintEl.classList.toggle('text-green-700', hasSelection);
+    },
+
+    updateDefaultHours() {
+        if (!this.defaultHoursEl) return;
+        const shift = this.getCurrentShift();
+
+        if (shift && shift.includes('出張')) {
+            this.defaultHoursEl.textContent = `出張の初期値: ${this.defaultTripHours.start}〜${this.defaultTripHours.end}（変更可）`;
+            this.defaultHoursEl.classList.remove('hidden');
+        } else {
+            this.defaultHoursEl.textContent = '';
+            this.defaultHoursEl.classList.add('hidden');
+        }
+    }
+};
+
 // 打刻処理
 const clock = {
     async clockIn() {
-        const shiftType = document.querySelector('input[name="shiftType"]:checked').value;
+        const shiftType = shiftSelection.getCurrentShift();
+        if (!shiftType) {
+            utils.showToast('シフトを選択してください', 'error');
+            return;
+        }
         const clockInTime = utils.getCurrentTimestamp(); // タイムスタンプ形式に変更
         const date = utils.getCurrentDate();
         
@@ -641,8 +740,8 @@ const clock = {
             const updated = await api.updateAttendance(app.todayAttendance.id, updatedData);
             app.todayAttendance = updated;
             
-            // 休日出勤の場合、振替休暇を記録
-            if (app.todayAttendance.shift_type === '休日出勤') {
+            // 休日出勤の場合、振替休暇を記録（休日出張含む）
+            if (['休日出勤', '休日出張'].includes(app.todayAttendance.shift_type)) {
                 const comp = utils.calculateCompensatory(workHours);
                 await api.createCompensatoryLeave({
                     employee_id: app.currentUser.id,
@@ -707,42 +806,31 @@ const clock = {
         const clockInBtn = document.getElementById('clockInBtn');
         const clockOutBtn = document.getElementById('clockOutBtn');
         const resetBtnContainer = document.getElementById('resetBtnContainer');
-        
-        console.log('=== updateButtons実行 ===');
-        console.log('app.todayAttendance:', app.todayAttendance);
-        console.log('clock_out値:', app.todayAttendance?.clock_out);
-        console.log('clock_outの型:', typeof app.todayAttendance?.clock_out);
-        
+
+        const hasShiftSelection = Boolean(shiftSelection.getCurrentShift());
+
         if (!app.todayAttendance || !app.todayAttendance.id) {
-            // 出勤データなし → 出勤ボタンのみ有効、リセットボタン非表示
-            console.log('パターン1: 出勤データなし');
-            clockInBtn.disabled = false;
+            // 出勤データなし → シフト未選択なら両方無効、選択済みなら出勤ボタンのみ有効
+            clockInBtn.disabled = !hasShiftSelection;
             clockOutBtn.disabled = true;
             resetBtnContainer.classList.add('hidden');
         } else if (app.todayAttendance.clock_out) {
             // 退勤済み（clock_outに値がある） → 両方無効、リセットボタン表示
-            console.log('パターン2: 退勤済み');
             clockInBtn.disabled = true;
             clockOutBtn.disabled = true;
             resetBtnContainer.classList.remove('hidden');
         } else {
             // 出勤済み・未退勤 → 退勤ボタンのみ有効、リセットボタン表示
-            console.log('パターン3: 出勤済み・未退勤 → 退勤ボタンを有効化');
             clockInBtn.disabled = true;
             clockOutBtn.disabled = false;
             resetBtnContainer.classList.remove('hidden');
         }
-        
-        console.log('最終ボタン状態:', {
-            clockInBtn_disabled: clockInBtn.disabled,
-            clockOutBtn_disabled: clockOutBtn.disabled
-        });
-        console.log('========================');
     },
     
     async loadTodayAttendance() {
         const today = utils.getCurrentDate();
         app.todayAttendance = await api.getTodayAttendance(app.currentUser.id, today);
+        shiftSelection.applyAttendanceShift(app.todayAttendance?.shift_type);
         this.updateTodayStatus();
         this.updateButtons();
     },
@@ -753,10 +841,10 @@ const clock = {
         if (!confirm('本日の打刻データをリセットしますか？\nこの操作は取り消せません。')) return;
         
         try {
-            // 休日出勤の場合、対応する振替休暇も削除
-            if (app.todayAttendance.shift_type === '休日出勤') {
+            // 休日出勤の場合、対応する振替休暇も削除（休日出張含む）
+            if (['休日出勤', '休日出張'].includes(app.todayAttendance.shift_type)) {
                 await api.deleteCompensatoryLeaveByWorkDate(
-                    app.todayAttendance.employee_id, 
+                    app.todayAttendance.employee_id,
                     app.todayAttendance.date
                 );
             }
@@ -781,16 +869,31 @@ const clockConfirm = {
     open(action) {
         this.action = action;
         const modal = document.getElementById('clockConfirmModal');
-        const shift = document.querySelector('input[name="shiftType"]:checked')?.value || '-';
+        const shift = shiftSelection.getCurrentShift() || app.todayAttendance?.shift_type;
+        if (!shift && !app.todayAttendance) {
+            utils.showToast('シフトを選択してください', 'error');
+            this.close();
+            return;
+        }
         const currentTime = utils.getCurrentTime();
         const statusText = app.todayAttendance
             ? `出勤: ${utils.formatTime(app.todayAttendance.clock_in)}${app.todayAttendance.clock_out ? ` / 退勤: ${utils.formatTime(app.todayAttendance.clock_out)}` : ''}`
             : 'まだ打刻がありません';
 
         document.getElementById('clockConfirmTitle').textContent = action === 'clockIn' ? '出勤を記録しますか？' : '退勤を記録しますか？';
-        document.getElementById('confirmShiftType').textContent = shift;
-        document.getElementById('confirmTargetTime').textContent = `${currentTime} に記録`; 
+        document.getElementById('confirmShiftType').textContent = shift || '-';
+        document.getElementById('confirmTargetTime').textContent = `${currentTime} に記録`;
         document.getElementById('confirmCurrentStatus').textContent = statusText;
+
+        const plannedHoursRow = document.getElementById('confirmPlannedHoursRow');
+        const plannedHours = document.getElementById('confirmPlannedHours');
+        if (shift && shift.includes('出張')) {
+            plannedHours.textContent = `${shiftSelection.defaultTripHours.start} 〜 ${shiftSelection.defaultTripHours.end}`;
+            plannedHoursRow.classList.remove('hidden');
+        } else {
+            plannedHours.textContent = '';
+            plannedHoursRow.classList.add('hidden');
+        }
 
         const workPreview = document.getElementById('confirmWorkPreview');
         const workHoursEl = document.getElementById('confirmWorkHours');
@@ -877,7 +980,7 @@ const attendance = {
             const employee = app.allEmployees.find(e => e.id === att.employee_id);
             const employeeName = employee ? employee.name : '不明';
             let compensatoryInfo = '-';
-            if (att.shift_type === '休日出勤' && att.work_hours > 0) {
+            if (['休日出勤', '休日出張'].includes(att.shift_type) && att.work_hours > 0) {
                 const comp = utils.calculateCompensatory(att.work_hours);
                 if (comp.days > 0) {
                     compensatoryInfo = `${comp.days}日`;
@@ -918,6 +1021,8 @@ const attendance = {
                     <span class="px-1.5 md:px-2 py-0.5 md:py-1 rounded text-xs font-medium ${
                         att.shift_type === '早番' ? 'bg-yellow-100 text-yellow-800' :
                         att.shift_type === '遅番' ? 'bg-blue-100 text-blue-800' :
+                        att.shift_type === '出張' ? 'bg-purple-100 text-purple-800' :
+                        att.shift_type === '休日出張' ? 'bg-purple-50 text-purple-900 border border-purple-200' :
                         'bg-red-100 text-red-800'
                     }">
                         ${att.shift_type}
@@ -1260,8 +1365,8 @@ const attendance = {
             // 勤怠データを追加
             await api.createAttendance(data);
             
-            // 休日出勤の場合、振替休暇を自動計算して追加
-            if (shiftType === '休日出勤' && workHours > 0) {
+            // 休日出勤の場合、振替休暇を自動計算して追加（休日出張含む）
+            if (['休日出勤', '休日出張'].includes(shiftType) && workHours > 0) {
                 const compensatory = utils.calculateCompensatory(workHours);
                 const compensatoryData = {
                     employee_id: employeeId,
@@ -1295,8 +1400,8 @@ const attendance = {
                 return;
             }
             
-            // 休日出勤の場合、対応する振替休暇も削除
-            if (att.shift_type === '休日出勤') {
+            // 休日出勤の場合、対応する振替休暇も削除（休日出張含む）
+            if (['休日出勤', '休日出張'].includes(att.shift_type)) {
                 await api.deleteCompensatoryLeaveByWorkDate(att.employee_id, att.date);
             }
             
@@ -1600,10 +1705,10 @@ const compensatoryManagement = {
             const employeeName = employee ? employee.name : '不明';
             
             // 対応する勤怠データから出退勤時刻を取得
-            const attendance = app.allAttendance.find(att => 
-                att.employee_id === leave.employee_id && 
-                att.date === leave.work_date && 
-                att.shift_type === '休日出勤'
+            const attendance = app.allAttendance.find(att =>
+                att.employee_id === leave.employee_id &&
+                att.date === leave.work_date &&
+                ['休日出勤', '休日出張'].includes(att.shift_type)
             );
             
             const clockIn = attendance ? utils.formatTime(attendance.clock_in) : '-';
@@ -1826,7 +1931,7 @@ const exportData = {
         const headers = ['日付', '氏名', 'シフト', '出勤時刻', '退勤時刻', '休憩時間(分)', '勤務時間(時間)', '残業時間(時間)', '振替', '備考'];
         const rows = filtered.map(att => {
             let compInfo = '';
-            if (att.shift_type === '休日出勤' && att.work_hours > 0) {
+            if (['休日出勤', '休日出張'].includes(att.shift_type) && att.work_hours > 0) {
                 const comp = utils.calculateCompensatory(att.work_hours);
                 compInfo = comp.days > 0 ? `${comp.days}日` : `${comp.hours}時間`;
             }
@@ -2329,6 +2434,7 @@ async function init() {
 // イベントリスナー
 document.addEventListener('DOMContentLoaded', () => {
     loginAssistant.init();
+    shiftSelection.init();
     init();
     
     // PWAモード検知とリロードボタン表示

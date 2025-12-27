@@ -276,9 +276,9 @@
                         <label class="block text-sm md:text-base font-medium text-gray-700 mb-3">
                             <i class="fas fa-business-time text-tsunagu-green mr-2"></i>シフト種別
                         </label>
-                        <div class="grid grid-cols-3 gap-2 md:gap-4">
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
                             <label class="cursor-pointer">
-                                <input type="radio" name="shiftType" value="早番" class="hidden peer" checked>
+                                <input type="radio" name="shiftType" value="早番" class="hidden peer">
                                 <div class="bg-gray-100 peer-checked:bg-tsunagu-yellow peer-checked:text-white p-3 md:p-4 rounded-lg text-center font-medium transition text-sm md:text-base">
                                     早番
                                 </div>
@@ -295,7 +295,21 @@
                                     休日出勤
                                 </div>
                             </label>
+                            <label class="cursor-pointer">
+                                <input type="radio" name="shiftType" value="出張" class="hidden peer">
+                                <div class="bg-gray-100 peer-checked:bg-purple-600 peer-checked:text-white p-3 md:p-4 rounded-lg text-center font-medium transition text-sm md:text-base">
+                                    出張
+                                </div>
+                            </label>
                         </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-3 mt-3">
+                            <label class="inline-flex items-center gap-2 text-sm md:text-base text-gray-700">
+                                <input type="checkbox" id="holidayWorkToggle" class="h-4 w-4 text-tsunagu-red border-gray-300 rounded">
+                                <span>休日扱いで記録する（休日出張を含む）</span>
+                            </label>
+                            <p id="shiftSelectionHint" class="text-xs md:text-sm text-red-600">シフトを選択すると打刻ボタンが有効になります。</p>
+                        </div>
+                        <p id="shiftDefaultHours" class="mt-2 text-xs md:text-sm text-gray-600 hidden"></p>
                     </div>
 
                     <!-- 打刻ボタン -->
@@ -662,7 +676,7 @@
                                 </h3>
                                 <ul class="text-xs md:text-sm text-blue-800 space-y-1">
                                     <li>• 日付、氏名、社員番号</li>
-                                    <li>• シフト種別（早番/遅番/休日出勤）</li>
+                                    <li>• シフト種別（早番/遅番/休日出勤/出張/休日出張）</li>
                                     <li>• 出勤時刻、退勤時刻</li>
                                     <li>• 休憩時間、勤務時間</li>
                                     <li>• 振替情報、備考</li>
@@ -763,6 +777,8 @@
                         <option value="早番">早番</option>
                         <option value="遅番">遅番</option>
                         <option value="休日出勤">休日出勤</option>
+                        <option value="出張">出張</option>
+                        <option value="休日出張">休日出張</option>
                     </select>
                 </div>
 
@@ -828,6 +844,8 @@
                         <option value="早番">早番</option>
                         <option value="遅番">遅番</option>
                         <option value="休日出勤">休日出勤</option>
+                        <option value="出張">出張</option>
+                        <option value="休日出張">休日出張</option>
                     </select>
                 </div>
 
@@ -919,6 +937,10 @@
                 <div class="flex items-center justify-between">
                     <span class="text-gray-600">シフト</span>
                     <span id="confirmShiftType" class="font-semibold text-tsunagu-blue"></span>
+                </div>
+                <div id="confirmPlannedHoursRow" class="hidden flex items-center justify-between">
+                    <span class="text-gray-600">予定勤務</span>
+                    <span id="confirmPlannedHours" class="font-semibold text-gray-900"></span>
                 </div>
                 <div class="flex items-center justify-between">
                     <span class="text-gray-600">記録予定時刻</span>

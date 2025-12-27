@@ -1595,9 +1595,6 @@ const dashboard = {
         
         // 残業時間アラート
         this.checkOvertimeAlert(totalOvertimeHours, employeeName);
-        
-        // 最近の勤怠データ表示
-        this.renderRecentAttendance(filteredAttendance);
     },
     
     checkOvertimeAlert(overtimeHours, employeeName) {
@@ -1610,47 +1607,6 @@ const dashboard = {
         } else {
             alertDiv.classList.add('hidden');
         }
-    },
-    
-    renderRecentAttendance(attendanceData) {
-        const tbody = document.getElementById('dashboardRecentAttendance');
-        const noDataMsg = document.getElementById('dashboardNoData');
-        
-        // 日付降順でソート（最新10件）
-        const recentData = attendanceData
-            .sort((a, b) => b.date.localeCompare(a.date))
-            .slice(0, 10);
-        
-        if (recentData.length === 0) {
-            tbody.innerHTML = '';
-            noDataMsg.classList.remove('hidden');
-            return;
-        }
-        
-        noDataMsg.classList.add('hidden');
-        
-        const html = recentData.map(att => {
-            const shortDate = att.date.split('-').slice(1).join('/');
-            return `
-            <tr class="hover:bg-gray-50">
-                <td class="px-3 py-2 text-xs">${shortDate}</td>
-                <td class="px-3 py-2 text-xs">
-                    <span class="px-2 py-1 rounded text-xs font-medium ${
-                        att.shift_type === '早番' ? 'bg-yellow-100 text-yellow-800' : 
-                        att.shift_type === '遅番' ? 'bg-blue-100 text-blue-800' : 
-                        'bg-red-100 text-red-800'
-                    }">
-                        ${att.shift_type}
-                    </span>
-                </td>
-                <td class="px-3 py-2 text-xs text-green-600 font-medium">${utils.formatTime(att.clock_in)}</td>
-                <td class="px-3 py-2 text-xs text-red-600 font-medium">${utils.formatTime(att.clock_out)}</td>
-                <td class="px-3 py-2 text-xs font-bold">${att.work_hours || 0}h</td>
-                <td class="px-3 py-2 text-xs font-bold ${att.overtime_hours > 0 ? 'text-orange-600' : 'text-gray-400'}">${att.overtime_hours || 0}h</td>
-            </tr>
-        `}).join('');
-        
-        tbody.innerHTML = html;
     }
 };
 

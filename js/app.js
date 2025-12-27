@@ -1724,17 +1724,26 @@ const compensatoryManagement = {
         // 管理者の場合、従業員フィルターを表示
         const filterContainer = document.getElementById('compensatoryFilterContainer');
         const nameHeader = document.getElementById('compensatoryNameHeader');
-        
+        const employeeFilterWrapper = document.getElementById('compensatoryEmployeeFilterWrapper');
+        const statusFilter = document.getElementById('compensatoryStatusFilter');
+
+        if (statusFilter) {
+            statusFilter.value = app.currentUser.role === 'admin' ? 'all' : 'unused';
+        }
+
         if (app.currentUser.role === 'admin') {
             if (filterContainer) filterContainer.classList.remove('hidden');
+            if (employeeFilterWrapper) employeeFilterWrapper.classList.remove('hidden');
             if (nameHeader) nameHeader.style.display = '';
             this.renderEmployeeFilter();
         } else {
-            if (filterContainer) filterContainer.classList.add('hidden');
+            if (filterContainer) filterContainer.classList.remove('hidden');
+            if (employeeFilterWrapper) employeeFilterWrapper.classList.add('hidden');
             if (nameHeader) nameHeader.style.display = 'none';
         }
-        
-        this.renderTable();
+
+        const selectedStatus = statusFilter ? statusFilter.value : 'all';
+        this.renderTable(null, selectedStatus);
     },
     
     renderEmployeeFilter() {
@@ -1750,27 +1759,28 @@ const compensatoryManagement = {
     
     filterCompensatory() {
         const selectedEmployeeId = document.getElementById('compensatoryEmployeeFilter').value;
-        
-        if (!selectedEmployeeId) {
-            // 全員表示
-            this.renderTable();
-        } else {
-            // 特定の従業員のみ表示
-            this.renderTable(selectedEmployeeId);
-        }
+        const selectedStatus = document.getElementById('compensatoryStatusFilter').value;
+
+        this.renderTable(selectedEmployeeId || null, selectedStatus || 'all');
     },
-    
-    renderTable(filterEmployeeId = null) {
+
+    renderTable(filterEmployeeId = null, statusFilter = 'all') {
         const tbody = document.getElementById('compensatoryTableBody');
         const cardList = document.getElementById('compensatoryCardList');
         const noDataMsg = document.getElementById('noCompensatoryMessage');
-        
+
         // フィルタリング
         let leavesToDisplay = app.compensatoryLeaves;
         if (filterEmployeeId) {
             leavesToDisplay = app.compensatoryLeaves.filter(
                 leave => leave.employee_id === filterEmployeeId
             );
+        }
+
+        if (statusFilter === 'unused') {
+            leavesToDisplay = leavesToDisplay.filter(leave => !leave.used);
+        } else if (statusFilter === 'used') {
+            leavesToDisplay = leavesToDisplay.filter(leave => leave.used);
         }
         
         if (leavesToDisplay.length === 0) {
@@ -1785,7 +1795,8 @@ const compensatoryManagement = {
         const html = leavesToDisplay.map(leave => {
             const employee = app.allEmployees.find(e => e.id === leave.employee_id);
             const employeeName = employee ? employee.name : '不明';
-            
+            const isAdmin = app.currentUser.role === 'admin';
+
             // 対応する勤怠データから出退勤時刻を取得
             const attendance = app.allAttendance.find(att =>
                 att.employee_id === leave.employee_id &&
@@ -1808,31 +1819,35 @@ const compensatoryManagement = {
                 : '<span class="px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">未使用</span>';
             
             // 名前列は管理者のみ表示
-            const nameColumn = app.currentUser.role === 'admin' 
+            const nameColumn = app.currentUser.role === 'admin'
                 ? `<td class="px-3 py-3 text-xs font-medium whitespace-nowrap">${employeeName}</td>`
                 : '';
-            
-            return `
-            <tr class="hover:bg-gray-50">
-                <td class="px-2 py-2 text-xs sticky-col-left" style="position: sticky; left: 0; z-index: 5; background-color: white; min-width: 50px;">
-                    <div class="flex gap-0.5 justify-center">
-                        <button onclick="compensatoryManagement.toggleUsed('${leave.id}', ${!leave.used})" 
+
+            const actionContent = isAdmin
+                ? '<span class="text-[11px] text-gray-500">閲覧のみ</span>'
+                : `<div class="flex gap-0.5 justify-center">
+                        <button onclick="compensatoryManagement.toggleUsed('${leave.id}', ${!leave.used})"
                                 class="px-2 py-1 rounded text-xs font-bold transition ${
-                                    leave.used 
-                                        ? 'bg-green-500 hover:bg-green-600 text-white' 
+                                    leave.used
+                                        ? 'bg-green-500 hover:bg-green-600 text-white'
                                         : 'bg-gray-500 hover:bg-gray-600 text-white'
                                 }"
                                 title="${leave.used ? '未使用に戻す' : '使用済にする'}">
                             ${leave.used ? '未' : '済'}
                         </button>
                         ${leave.used ? `
-                        <button onclick="compensatoryManagement.saveUsedDate('${leave.id}')" 
+                        <button onclick="compensatoryManagement.saveUsedDate('${leave.id}')"
                                 class="px-1.5 py-1 rounded text-xs font-medium transition bg-blue-500 hover:bg-blue-600 text-white"
                                 title="使用日を保存">
                             <i class="fas fa-save text-xs"></i>
                         </button>
                         ` : ''}
-                    </div>
+                    </div>`;
+
+            return `
+            <tr class="hover:bg-gray-50">
+                <td class="px-2 py-2 text-xs sticky-col-left" style="position: sticky; left: 0; z-index: 5; background-color: white; min-width: 50px;">
+                    ${actionContent}
                 </td>
                 ${nameColumn}
                 <td class="px-3 py-3 text-xs whitespace-nowrap">${utils.formatDate(leave.work_date)}</td>
@@ -1841,11 +1856,11 @@ const compensatoryManagement = {
                 <td class="px-3 py-3 text-xs font-bold whitespace-nowrap">${leave.work_hours}時間</td>
                 <td class="px-3 py-3 text-xs font-medium text-red-600 whitespace-nowrap">${substituteInfo}</td>
                 <td class="px-3 py-3 text-xs">
-                    <input type="date" 
-                           id="usedDate_${leave.id}" 
-                           value="${leave.used_date || ''}" 
+                    <input type="date"
+                           id="usedDate_${leave.id}"
+                           value="${leave.used_date || ''}"
                            class="px-2 py-1 border border-gray-300 rounded text-xs w-32"
-                           ${!leave.used ? 'disabled' : ''}>
+                           ${(!leave.used || isAdmin) ? 'disabled' : ''}>
                 </td>
                 <td class="px-3 py-3 text-xs whitespace-nowrap">${statusBadge}</td>
             </tr>
@@ -1857,6 +1872,7 @@ const compensatoryManagement = {
             const cardHtml = leavesToDisplay.map(leave => {
                 const employee = app.allEmployees.find(e => e.id === leave.employee_id);
                 const employeeName = employee ? employee.name : '不明';
+                const isAdmin = app.currentUser.role === 'admin';
 
                 const attendance = app.allAttendance.find(att =>
                     att.employee_id === leave.employee_id &&
@@ -1890,13 +1906,15 @@ const compensatoryManagement = {
                                 <span class="flex items-center gap-1 text-red-600"><i class="fas fa-exchange-alt"></i>${substituteInfo}</span>
                             </div>
                         </div>
+                        ${isAdmin ? '<span class="text-[11px] text-gray-500">閲覧のみ</span>' : `
                         <button onclick="compensatoryManagement.toggleUsed('${leave.id}', ${!leave.used})"
                                 class="px-2 py-1 text-xs font-semibold rounded-lg ${leave.used ? 'bg-gray-700 text-white hover:bg-gray-800' : 'bg-green-600 text-white hover:bg-green-700'}" title="状態切替">
                             ${leave.used ? '未使用に戻す' : '使用済にする'}
                         </button>
+                        `}
                     </div>
                     <div class="flex flex-col gap-2">
-                        ${leave.used ? `
+                        ${leave.used && !isAdmin ? `
                         <div class="flex items-center gap-2">
                             <input type="date"
                                    id="usedDate_${leave.id}"
@@ -1907,7 +1925,7 @@ const compensatoryManagement = {
                                 <i class="fas fa-save"></i><span>保存</span>
                             </button>
                         </div>
-                        ` : `<div class="text-[11px] text-gray-500">使用日を入力するには「使用済」に変更してください。</div>`}
+                        ` : `<div class="text-[11px] text-gray-500">${isAdmin ? '操作権限がありません。' : '使用日を入力するには「使用済」に変更してください。'}</div>`}
                     </div>
                 </div>
                 `;
@@ -1916,8 +1934,12 @@ const compensatoryManagement = {
             cardList.innerHTML = cardHtml;
         }
     },
-    
+
     async toggleUsed(leaveId, newUsedStatus) {
+        if (app.currentUser.role === 'admin') {
+            utils.showToast('管理者は操作できません', 'info');
+            return;
+        }
         try {
             const leave = app.compensatoryLeaves.find(l => l.id === leaveId);
             if (!leave) return;
@@ -1960,10 +1982,15 @@ const compensatoryManagement = {
     hideUsedDateModal() {
         document.getElementById('usedDateModal').classList.add('hidden');
     },
-    
+
     async submitUsedDate(event) {
         event.preventDefault();
-        
+
+        if (app.currentUser.role === 'admin') {
+            utils.showToast('管理者は操作できません', 'info');
+            return;
+        }
+
         const leaveId = document.getElementById('selectedLeaveId').value;
         const usedDate = document.getElementById('selectedUsedDate').value;
         
@@ -1989,6 +2016,10 @@ const compensatoryManagement = {
     },
     
     async saveUsedDate(leaveId) {
+        if (app.currentUser.role === 'admin') {
+            utils.showToast('管理者は操作できません', 'info');
+            return;
+        }
         try {
             const usedDateInput = document.getElementById(`usedDate_${leaveId}`);
             const usedDate = usedDateInput.value;

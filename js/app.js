@@ -911,75 +911,6 @@ const clock = {
     }
 };
 
-// 打刻前確認モーダル
-const clockConfirm = {
-    action: null,
-
-    open(action) {
-        this.action = action;
-        const modal = document.getElementById('clockConfirmModal');
-        const shift = shiftSelection.getCurrentShift() || app.todayAttendance?.shift_type;
-        if (!shift && !app.todayAttendance) {
-            utils.showToast('シフトを選択してください', 'error');
-            this.close();
-            return;
-        }
-        const currentTime = utils.getCurrentTime();
-        const statusText = app.todayAttendance
-            ? `出勤: ${utils.formatTime(app.todayAttendance.clock_in)}${app.todayAttendance.clock_out ? ` / 退勤: ${utils.formatTime(app.todayAttendance.clock_out)}` : ''}`
-            : 'まだ打刻がありません';
-
-        document.getElementById('clockConfirmTitle').textContent = action === 'clockIn' ? '出勤を記録しますか？' : '退勤を記録しますか？';
-        document.getElementById('confirmShiftType').textContent = shift || '-';
-        document.getElementById('confirmTargetTime').textContent = `${currentTime} に記録`;
-        document.getElementById('confirmCurrentStatus').textContent = statusText;
-
-        const plannedHoursRow = document.getElementById('confirmPlannedHoursRow');
-        const plannedHours = document.getElementById('confirmPlannedHours');
-        if (shift && shift.includes('出張')) {
-            plannedHours.textContent = `${shiftSelection.defaultTripHours.start} 〜 ${shiftSelection.defaultTripHours.end}`;
-            plannedHoursRow.classList.remove('hidden');
-        } else {
-            plannedHours.textContent = '';
-            plannedHoursRow.classList.add('hidden');
-        }
-
-        const workPreview = document.getElementById('confirmWorkPreview');
-        const workHoursEl = document.getElementById('confirmWorkHours');
-        const workNoteEl = document.getElementById('confirmWorkNote');
-
-        if (action === 'clockOut' && app.todayAttendance?.clock_in) {
-            const preview = utils.calculateWorkHours(
-                utils.formatTime(app.todayAttendance.clock_in),
-                currentTime
-            );
-            workHoursEl.textContent = `${preview.workHours}時間（休憩 ${preview.breakMinutes}分控除後）`;
-            workNoteEl.textContent = preview.workHours >= 7.5 ? '残業ラインが近いため、内容を確認してください。' : '';
-            workPreview.classList.remove('hidden');
-        } else {
-            workPreview.classList.add('hidden');
-            workHoursEl.textContent = '';
-            workNoteEl.textContent = '';
-        }
-
-        modal.classList.remove('hidden');
-    },
-
-    close() {
-        document.getElementById('clockConfirmModal').classList.add('hidden');
-        this.action = null;
-    },
-
-    async confirm() {
-        if (this.action === 'clockIn') {
-            await clock.clockIn();
-        } else if (this.action === 'clockOut') {
-            await clock.clockOut();
-        }
-        this.close();
-    }
-};
-
 // 勤怠一覧
 const attendance = {
     async loadAttendance() {
@@ -2566,13 +2497,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // 打刻ボタン
-    document.getElementById('clockInBtn').addEventListener('click', () => clockConfirm.open('clockIn'));
-    document.getElementById('clockOutBtn').addEventListener('click', () => clockConfirm.open('clockOut'));
+    document.getElementById('clockInBtn').addEventListener('click', () => clock.clockIn());
+    document.getElementById('clockOutBtn').addEventListener('click', () => clock.clockOut());
     document.getElementById('resetClockBtn').addEventListener('click', () => clock.resetClock());
-
-    document.getElementById('confirmClockAction').addEventListener('click', () => clockConfirm.confirm());
-    document.getElementById('cancelClockAction').addEventListener('click', () => clockConfirm.close());
-    document.getElementById('closeClockConfirm').addEventListener('click', () => clockConfirm.close());
     
     // ダッシュボードフィルター
     document.getElementById('dashboardFilterBtn').addEventListener('click', () => dashboard.updateDashboard());

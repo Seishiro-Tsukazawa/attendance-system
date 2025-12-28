@@ -2335,20 +2335,39 @@ const paidLeave = {
             totalRemaining += pl.remaining_days || 0;
         });
         
-        // 今年度付与・今年度使用は fiscal_year でフィルタリング
+        // 今年度付与は fiscal_year でフィルタリング
         const currentYearLeaves = myLeaves.filter(pl => pl.fiscal_year === currentYearStr);
         
         let totalGranted = 0;
-        let totalUsed = 0;
         
         currentYearLeaves.forEach(pl => {
             totalGranted += pl.grant_days || 0;
-            totalUsed += pl.used_days || 0;
         });
+        
+        // 最短有効期限を取得（残日数が0より大きいもののみ）
+        const leavesWithRemaining = myLeaves.filter(pl => (pl.remaining_days || 0) > 0);
+        let earliestExpiry = '-';
+        
+        if (leavesWithRemaining.length > 0) {
+            // expiry_dateで昇順ソート（最も早い期限が先頭）
+            const sortedLeaves = leavesWithRemaining.sort((a, b) => 
+                (a.expiry_date || '').localeCompare(b.expiry_date || '')
+            );
+            const earliest = sortedLeaves[0];
+            
+            if (earliest.expiry_date) {
+                // YYYY-MM-DD形式をYYYY/MM/DDに変換
+                const expiryDate = new Date(earliest.expiry_date + 'T00:00:00');
+                const year = expiryDate.getFullYear();
+                const month = expiryDate.getMonth() + 1;
+                const day = expiryDate.getDate();
+                earliestExpiry = `${year}/${month}/${day}\n(${earliest.remaining_days}日)`;
+            }
+        }
         
         document.getElementById('paidLeaveRemaining').textContent = `${totalRemaining}日`;
         document.getElementById('paidLeaveGranted').textContent = `${totalGranted}日`;
-        document.getElementById('paidLeaveUsed').textContent = `${totalUsed}日`;
+        document.getElementById('paidLeaveExpiry').textContent = earliestExpiry;
     },
     
     renderRequests() {

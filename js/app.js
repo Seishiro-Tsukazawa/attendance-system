@@ -2325,12 +2325,23 @@ const paidLeave = {
             pl.employee_id === app.currentUser.id && pl.status === 'active'
         );
         
+        // 現在の年度を取得
+        const currentYear = new Date().getFullYear();
+        const currentYearStr = currentYear.toString();
+        
+        // 残日数は全期間の合計
         let totalRemaining = 0;
+        myLeaves.forEach(pl => {
+            totalRemaining += pl.remaining_days || 0;
+        });
+        
+        // 今年度付与・今年度使用は fiscal_year でフィルタリング
+        const currentYearLeaves = myLeaves.filter(pl => pl.fiscal_year === currentYearStr);
+        
         let totalGranted = 0;
         let totalUsed = 0;
         
-        myLeaves.forEach(pl => {
-            totalRemaining += pl.remaining_days || 0;
+        currentYearLeaves.forEach(pl => {
             totalGranted += pl.grant_days || 0;
             totalUsed += pl.used_days || 0;
         });

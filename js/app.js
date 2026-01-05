@@ -728,7 +728,9 @@ const clock = {
         const clockOutTime = utils.getCurrentTimestamp(); // タイムスタンプ形式に変更
         
         // clock_inとclock_outから時刻部分を抽出して勤務時間を計算
-        const clockInDate = new Date(app.todayAttendance.clock_in);
+        // タイムゾーンを統一して計算（どちらもローカルタイムとして扱う）
+        const clockInStr = app.todayAttendance.clock_in.replace(/[+-]\d{2}:\d{2}$|[+-]\d{2}$|Z$/, '');
+        const clockInDate = new Date(clockInStr);
         const clockOutDate = new Date(clockOutTime);
         const diffMinutes = (clockOutDate - clockInDate) / 1000 / 60;
         const diffHours = diffMinutes / 60;
@@ -1317,8 +1319,11 @@ const attendance = {
         let breakMinutes = 0;
         
         if (clockInTimestamp && clockOutTimestamp) {
-            const clockInDate = new Date(clockInTimestamp);
-            const clockOutDate = new Date(clockOutTimestamp);
+            // タイムゾーン情報を削除して統一的に扱う
+            const clockInStr = clockInTimestamp.replace(/[+-]\d{2}:\d{2}$|[+-]\d{2}$|Z$/, '');
+            const clockOutStr = clockOutTimestamp.replace(/[+-]\d{2}:\d{2}$|[+-]\d{2}$|Z$/, '');
+            const clockInDate = new Date(clockInStr);
+            const clockOutDate = new Date(clockOutStr);
             const diffMinutes = (clockOutDate - clockInDate) / 1000 / 60;
             const diffHours = diffMinutes / 60;
             
@@ -1422,8 +1427,11 @@ const attendance = {
         let overtimeHours = 0;
         
         if (clockInTimestamp && clockOutTimestamp) {
-            const clockInDate = new Date(clockInTimestamp);
-            const clockOutDate = new Date(clockOutTimestamp);
+            // タイムゾーン情報を削除して統一的に扱う
+            const clockInStr = clockInTimestamp.replace(/[+-]\d{2}:\d{2}$|[+-]\d{2}$|Z$/, '');
+            const clockOutStr = clockOutTimestamp.replace(/[+-]\d{2}:\d{2}$|[+-]\d{2}$|Z$/, '');
+            const clockInDate = new Date(clockInStr);
+            const clockOutDate = new Date(clockOutStr);
             const diffMinutes = (clockOutDate - clockInDate) / 1000 / 60;
             const diffHours = diffMinutes / 60;
             

@@ -407,8 +407,9 @@ const auth = {
             }
             
             // 入社日から6ヶ月後、1年半後、2年半後...の有給付与日を計算
-            const hireDate = new Date(employee.hire_date);
-            const todayDate = new Date(today);
+            // タイムゾーンの影響を避けるため、日付文字列に時刻を付与
+            const hireDate = new Date(employee.hire_date + 'T00:00:00');
+            const todayDate = new Date(today + 'T00:00:00');
             
             // 既存の有給データを取得
             const existingLeaves = await api.getPaidLeaves();
@@ -455,6 +456,7 @@ const auth = {
         const years = Math.floor((todayDate - hireDate) / (365.25 * 24 * 60 * 60 * 1000));
         
         // 入社6ヶ月後: 10日
+        // hireDate, todayDateは既にT00:00:00付きでDateオブジェクト化されている
         const firstGrant = new Date(hireDate);
         firstGrant.setMonth(firstGrant.getMonth() + 6);
         if (firstGrant <= todayDate) {
@@ -486,7 +488,8 @@ const auth = {
     
     // 有効期限を計算（付与日から2年後）
     calculateExpiryDate(grantDate) {
-        const expiry = new Date(grantDate);
+        // タイムゾーンの影響を避けるため、日付文字列に時刻を付与
+        const expiry = new Date(grantDate + 'T00:00:00');
         expiry.setFullYear(expiry.getFullYear() + 2);
         return expiry.toISOString().split('T')[0];
     }
